@@ -31,6 +31,16 @@ Verification requires an arm64 executable, hardened runtime, strict code signatu
 
 There are no macOS helper executables in this app. The bundled Linux kernel runs inside the VM. No sandbox exceptions from SuperBot are copied.
 
+### Disposable local VM smoke test
+
+```sh
+bash scripts/runtime-smoke-test.sh /absolute/path/to/Studio.app
+```
+
+This copies the supplied bundle into a unique temporary directory, assigns the diagnostic identity `ai.cbk.studio.smoke-test`, and ad-hoc signs/verifies it with the same four entitlements. It does not launch or replace the production app. The diagnostic verifies the current public Compose artifact, downloads small public VM/Alpine images, boots a temporary VM, sends SIGTERM, and checks a shutdown marker from a second container sharing its disposable ext4 volume before tearing down the VM. Runtime fixtures are removed only after confirmed teardown; failures to stop preserve them for investigation. The script retains its small diagnostic bundle and log and requires a `STUDIO_SMOKE_PASS` marker plus a successful process exit.
+
+Run this on Apple silicon with network access and at least 1 GiB free; allow additional room for temporary downloads and packaging. It is a real VM boundary test, not a full community-stack startup/migration test and not proof that every upstream service honors SIGTERM. It also does not substitute for Developer ID, Gatekeeper, or clean-machine release testing.
+
 ## Before the first public release
 
 - Configure the five secrets and confirm CI is green.

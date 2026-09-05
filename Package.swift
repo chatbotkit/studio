@@ -31,6 +31,7 @@ let package = Package(
             ]
         ),
         .target(name: "StudioConfiguration"),
-        .testTarget(name: "StudioConfigurationTests", dependencies: ["StudioConfiguration"])
+        .testTarget(name: "StudioConfigurationTests", dependencies: ["StudioConfiguration"]),
+        .testTarget(name: "StudioTests", dependencies: ["Studio"])
     ]
 )

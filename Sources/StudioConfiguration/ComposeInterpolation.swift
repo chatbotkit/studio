@@ -124,13 +124,29 @@ public enum ComposeInterpolation {
 
 public enum GarageConfiguration {
     public static func extract(from yaml: String) throws -> String {
-        let lines = yaml.components(separatedBy: "\n")
-        guard let marker = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "garage-config:" }),
-              let content = lines[marker...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "content: |" }) else {
+        let lines = yaml.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        func endOfBlock(after index: Int, indent: Int) -> Int {
+            lines.indices.dropFirst(index + 1).first { index in
+                let line = lines[index]
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                return !trimmed.isEmpty && !trimmed.hasPrefix("#") && line.prefix { $0 == " " }.count <= indent
+            } ?? lines.count
+        }
+        guard let configs = lines.firstIndex(of: "configs:") else {
+            throw ConfigurationError("The artifact is missing its inline Garage configuration.")
+        }
+        let configEnd = endOfBlock(after: configs, indent: 0)
+        let markers = ((configs + 1)..<configEnd).filter { lines[$0] == "  garage-config:" }
+        guard markers.count == 1, let marker = markers.first else {
+            throw ConfigurationError("The artifact must contain exactly one inline Garage configuration.")
+        }
+        let garageEnd = endOfBlock(after: marker, indent: 2)
+        let contents = ((marker + 1)..<garageEnd).filter { lines[$0] == "    content: |" }
+        guard contents.count == 1, let content = contents.first else {
             throw ConfigurationError("The artifact is missing its inline Garage configuration.")
         }
         var collected: [String] = []
-        for line in lines[(content + 1)...] {
+        for line in lines[(content + 1)..<garageEnd] {
             let indent = line.prefix { $0 == " " }.count
             if !line.trimmingCharacters(in: .whitespaces).isEmpty, indent < 6 { break }
             collected.append(indent >= 6 ? String(line.dropFirst(6)) : "")
@@ -160,7 +176,7 @@ public enum StartupFailure {
             let lower = line.lowercased()
             return lower.contains("error:") || lower.contains(" error ") || lower.contains("panicked") || lower.contains("fatal")
         }
-        let reason = errorLine ?? lines.last ?? fallback
+        let reason = String((errorLine ?? lines.last ?? fallback).prefix(512))
         let status = exitCode.map { " exited with code \($0)" } ?? " did not become healthy"
         return "\(service)\(status): \(reason)\n\(clean.suffix(2000))"
     }

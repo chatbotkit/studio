@@ -22,10 +22,13 @@ struct AppRuntimeError: LocalizedError, Sendable {
     var errorDescription: String? { message }
 }
 
-private final class MemoryWriter: Writer, @unchecked Sendable {
-    private let lock = NSLock()
+final class MemoryWriter: Writer, @unchecked Sendable {
+    // Serialize delivery as well as storage. Recursive so a callback may read
+    // text() without deadlocking; callbacks enqueue UI work and stay short.
+    private let lock = NSRecursiveLock()
     private var storage = Data()
-    private var pendingLine = ""
+    private var pendingLine = Data()
+    private var closed = false
     private let onLines: (@Sendable ([String]) -> Void)?
 
     init(onLines: (@Sendable ([String]) -> Void)? = nil) {
@@ -35,35 +38,44 @@ private final class MemoryWriter: Writer, @unchecked Sendable {
     func write(_ data: Data) throws {
         var completed: [String] = []
         lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { throw AppRuntimeError("Cannot write to a closed log stream.") }
         storage.append(data)
         if storage.count > 1_000_000 { storage.removeFirst(storage.count - 1_000_000) }
-        if let text = String(data: data, encoding: .utf8) {
-            pendingLine += text
-            let pieces = pendingLine.components(separatedBy: "\n")
-            pendingLine = pieces.last ?? ""
-            completed = pieces.dropLast().map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\r")) }
-            if pendingLine.count > 16_384 {
-                completed.append(pendingLine)
-                pendingLine = ""
+        for byte in data {
+            if byte == 10 {
+                completed.append(String(decoding: pendingLine, as: UTF8.self).trimmingCharacters(in: CharacterSet(charactersIn: "\r")))
+                pendingLine.removeAll(keepingCapacity: true)
+            } else {
+                pendingLine.append(byte)
+                if pendingLine.count > 16_384 {
+                    // Bound unterminated lines without splitting a valid UTF-8
+                    // scalar. Invalid bytes use replacement characters.
+                    var length = 16_384
+                    while length > 16_381, pendingLine[pendingLine.startIndex + length] & 0xc0 == 0x80 { length -= 1 }
+                    completed.append(String(decoding: pendingLine.prefix(length), as: UTF8.self))
+                    pendingLine = Data(pendingLine.dropFirst(length))
+                }
             }
         }
-        lock.unlock()
         let visible = completed.filter { !$0.isEmpty }
         if !visible.isEmpty { onLines?(visible) }
     }
 
     func close() throws {
         lock.lock()
-        let tail = pendingLine
-        pendingLine = ""
-        lock.unlock()
+        defer { lock.unlock() }
+        guard !closed else { return }
+        closed = true
+        let tail = String(decoding: pendingLine, as: UTF8.self)
+        pendingLine.removeAll()
         if !tail.isEmpty { onLines?([tail]) }
     }
 
     func text() -> String {
         lock.lock()
         defer { lock.unlock() }
-        return String(data: storage, encoding: .utf8) ?? ""
+        return String(decoding: storage, as: UTF8.self)
     }
 }
 
@@ -79,9 +91,6 @@ struct OCIStackBundle: Sendable {
 }
 
 enum OCIComposeLoader {
-    private static let composeArtifactType = "application/vnd.docker.compose.project"
-    private static let composeLayerType = "application/vnd.docker.compose.file+yaml"
-
     static func load(reference source: String, cacheRoot: URL) async throws -> OCIStackBundle {
         guard source.hasPrefix("oci://") else {
             throw AppRuntimeError("The stack source must begin with oci://")
@@ -96,36 +105,12 @@ enum OCIComposeLoader {
         }
 
         let client = try RegistryClient(reference: rawReference)
-        let root = try await client.resolve(name: reference.path, tag: reference.tag ?? "latest")
-        let manifest: Manifest = try await client.fetch(name: reference.path, descriptor: root)
-        guard manifest.artifactType == composeArtifactType else {
-            throw AppRuntimeError("The OCI object is not a Docker Compose project.")
+        let repository = reference.path
+        let root = try await client.resolve(name: repository, tag: reference.tag ?? "latest")
+        let (composeData, lockData) = try await VerifiedComposeArtifact.load(root: root) {
+            try await client.fetchData(name: repository, descriptor: $0)
         }
-
-        let yamlLayers = manifest.layers.filter { $0.mediaType == composeLayerType }
-        guard yamlLayers.count >= 2 else {
-            throw AppRuntimeError("The Compose artifact does not contain its project and digest-lock layers.")
-        }
-
-        var composeData: Data?
-        var lockData: Data?
-        for layer in yamlLayers {
-            let data = try await client.fetchData(name: reference.path, descriptor: layer)
-            try verify(data, descriptor: layer)
-            let title = layer.annotations?["org.opencontainers.image.title"]
-                ?? layer.annotations?["com.docker.compose.file"]
-                ?? ""
-            let text = String(data: data, encoding: .utf8) ?? ""
-            if title.contains("image-digests") || text.contains("image: ghcr.io/chatbotkit/platform-community-app@sha256:") {
-                lockData = data
-            } else if title.contains("compose") || text.contains("platform-community distribution stack") {
-                composeData = data
-            }
-        }
-        if composeData == nil { composeData = try await client.fetchData(name: reference.path, descriptor: yamlLayers[0]) }
-        if lockData == nil { lockData = try await client.fetchData(name: reference.path, descriptor: yamlLayers[1]) }
-        guard let composeData, let lockData,
-              let compose = String(data: composeData, encoding: .utf8),
+        guard let compose = String(data: composeData, encoding: .utf8),
               let lock = String(data: lockData, encoding: .utf8) else {
             throw AppRuntimeError("The OCI YAML layers are not valid UTF-8.")
         }
@@ -154,7 +139,7 @@ enum OCIComposeLoader {
         )
     }
 
-    private static func verify(_ data: Data, descriptor: Descriptor) throws {
+    static func verify(_ data: Data, descriptor: Descriptor) throws {
         guard data.count == Int(descriptor.size) else {
             throw AppRuntimeError("An OCI layer had an unexpected size.")
         }
@@ -164,21 +149,43 @@ enum OCIComposeLoader {
         }
     }
 
-    private static func parseImageLock(_ yaml: String) throws -> [String: String] {
+    static func parseImageLock(_ yaml: String) throws -> [String: String] {
         var result: [String: String] = [:]
         var current: String?
-        for raw in yaml.split(separator: "\n", omittingEmptySubsequences: false) {
+        var inServices = false
+        var sawServices = false
+        var names: Set<String> = []
+        for raw in yaml.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(raw)
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let indent = line.prefix { $0 == " " }.count
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            if indent == 0 {
+                inServices = trimmed == "services:"
+                current = nil
+                if inServices {
+                    guard !sawServices else { throw AppRuntimeError("The image lock contains duplicate services sections.") }
+                    sawServices = true
+                }
+                continue
+            }
+            guard inServices else { continue }
             if indent == 2, trimmed.hasSuffix(":"), !trimmed.contains(" ") {
                 current = String(trimmed.dropLast())
+                guard names.insert(current!).inserted else { throw AppRuntimeError("The image lock contains duplicate service \(current!).") }
             } else if indent == 4, trimmed.hasPrefix("image:"), let current {
-                let image = trimmed.dropFirst("image:".count).trimmingCharacters(in: .whitespaces)
-                guard image.contains("@sha256:") else {
-                    throw AppRuntimeError("Image \(current) is not digest-pinned.")
+                var image = trimmed.dropFirst("image:".count).trimmingCharacters(in: .whitespaces)
+                if let first = image.first, ["\"", "'"].contains(first), image.last == first, image.count >= 2 {
+                    image = String(image.dropFirst().dropLast())
                 }
+                guard result[current] == nil else { throw AppRuntimeError("The image lock contains duplicate image keys for \(current).") }
+                guard image.range(of: "^[^\\s@]+@sha256:[a-f0-9]{64}$", options: .regularExpression) != nil else {
+                    throw AppRuntimeError("Image \(current) must be pinned to a valid SHA-256 digest.")
+                }
+                _ = try Reference.parse(image)
                 result[current] = image
+            } else if indent <= 2 {
+                throw AppRuntimeError("Unsupported service entry in the image lock.")
             }
         }
         return result
@@ -188,7 +195,7 @@ enum OCIComposeLoader {
 
 // MARK: - Localhost TCP publication
 
-private final class ListenerGate: @unchecked Sendable {
+final class ListenerGate: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Error>?
     private var result: Result<Void, Error>?
@@ -286,15 +293,18 @@ private final class LocalTCPForwarder: @unchecked Sendable {
     func start(preferredPort: UInt16, targetUnixSocketPath: String) async throws -> UInt16 {
         stop()
         var lastError: Error?
-        for port in preferredPort...(preferredPort + 9) {
+        let lastPort = UInt16(min(Int(preferredPort) + 9, Int(UInt16.max)))
+        for port in preferredPort...lastPort {
+            try Task.checkCancellation()
             do {
                 try await startOne(port: port, targetUnixSocketPath: targetUnixSocketPath)
                 return port
             } catch {
+                if Task.isCancelled { throw CancellationError() }
                 lastError = error
             }
         }
-        throw AppRuntimeError("Could not publish localhost ports \(preferredPort)–\(preferredPort + 9): \(lastError?.localizedDescription ?? "unknown error")")
+        throw AppRuntimeError("Could not publish localhost ports \(preferredPort)–\(lastPort): \(lastError?.localizedDescription ?? "unknown error")")
     }
 
     private func startOne(port: UInt16, targetUnixSocketPath: String) async throws {
@@ -316,7 +326,13 @@ private final class LocalTCPForwarder: @unchecked Sendable {
         }
         candidate.start(queue: queue)
         do {
-            try await withCheckedThrowingContinuation { gate.install($0) }
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { gate.install($0) }
+                try Task.checkCancellation()
+            } onCancel: {
+                candidate.cancel()
+                gate.finish(.failure(CancellationError()))
+            }
             lock.withLock { listener = candidate }
         } catch {
             candidate.cancel()
@@ -443,17 +459,43 @@ private struct ServicePlan: Sendable {
     let fileMount: (source: String, destination: String)?
 }
 
-actor PrivateOCIStackRuntime {
+actor PrivateOCIStackRuntime: StackRuntime {
     private static let initImage = "ghcr.io/apple/containerization/vminit:0.43.0"
     private static let bootstrapAddress = "192.0.2.2"
     private var pod: LinuxPod?
     private var forwarder: LocalTCPForwarder?
     private var bridgeProcess: LinuxProcess?
     private var outputs: [String: MemoryWriter] = [:]
+    private var startedServices: Set<String> = []
+    private var starting = false
+    private var storageLease: RuntimeStorageLease?
 
     func start(kernelURL: URL, dataRoot: URL, event: @escaping @MainActor @Sendable (RuntimeEvent) -> Void) async throws -> StackInfo {
-        await stop()
+        guard !starting else { throw AppRuntimeError("The private stack is already starting.") }
+        starting = true
+        defer { starting = false }
+        _ = try await stop()
+        do {
+            try Task.checkCancellation()
+            try FileManager.default.createDirectory(at: dataRoot, withIntermediateDirectories: true)
+            storageLease = try RuntimeStorageLease(root: dataRoot)
+            return try await prepareAndStart(kernelURL: kernelURL, dataRoot: dataRoot, event: event)
+        } catch {
+            let startupError = error
+            // Cleanup must not inherit the cancelled startup task. Cover every
+            // resource acquisition, including failures before pod creation.
+            do {
+                let warnings = try await Task { try await self.stop() }.value
+                if !warnings.isEmpty { await event(.containerLines("runtime", warnings)) }
+            }
+            catch { throw AppRuntimeError("\(startupError.localizedDescription)\n\(error.localizedDescription)") }
+            throw startupError
+        }
+    }
+
+    private func prepareAndStart(kernelURL: URL, dataRoot: URL, event: @escaping @MainActor @Sendable (RuntimeEvent) -> Void) async throws -> StackInfo {
         try FileManager.default.createDirectory(at: dataRoot, withIntermediateDirectories: true)
+        try DiskSafety.require(at: dataRoot, additional: 0)
 
         await event(.phase(.resolving))
         await event(.progress(0.03, "Resolving OCI Compose artifact"))
@@ -461,6 +503,7 @@ actor PrivateOCIStackRuntime {
             reference: defaultOCIReference,
             cacheRoot: dataRoot.appendingPathComponent("artifacts", isDirectory: true)
         )
+        try Task.checkCancellation()
         await event(.log("Verified OCI manifest \(short(bundle.resolvedDigest))"))
         await event(.log("Loaded compose.yml and digest-locked image map"))
 
@@ -492,9 +535,19 @@ actor PrivateOCIStackRuntime {
         try FileManager.default.createDirectory(at: serviceRoot, withIntermediateDirectories: true)
         var rootfs: [String: Containerization.Mount] = [:]
         var processConfigs: [String: LinuxProcessConfiguration] = [:]
+        var protectedImages: Set<String> = [Self.initImage]
         for (index, plan) in plans.enumerated() {
+            try Task.checkCancellation()
             await event(.progress(0.12 + (Double(index) * 0.075), "Preparing \(plan.name)"))
-            let image = try await store.get(reference: plan.image, pull: true)
+            let image: Containerization.Image
+            if let cached = try? await store.get(reference: plan.image) {
+                image = cached
+            } else {
+                try DiskSafety.require(at: dataRoot, additional: Int64(1.gib()))
+                image = try await store.get(reference: plan.image, pull: true)
+            }
+            protectedImages.insert(image.reference)
+            try Task.checkCancellation()
             rootfs[plan.name] = try await prepareRootfs(
                 image: image,
                 digest: image.digest,
@@ -524,8 +577,9 @@ actor PrivateOCIStackRuntime {
         ]
         var podVolumes: [LinuxPod.PodVolume] = []
         for (name, size) in volumes {
+            try Task.checkCancellation()
             let path = volumeRoot.appendingPathComponent("\(name).ext4")
-            try prepareVolume(at: path, size: size)
+            try await prepareVolume(at: path, size: size)
             podVolumes.append(.init(name: name, source: .diskImage(path: path), format: "ext4"))
         }
 
@@ -554,6 +608,7 @@ actor PrivateOCIStackRuntime {
         }
 
         for plan in plans {
+            try Task.checkCancellation()
             guard let mount = rootfs[plan.name], var configuredProcess = processConfigs[plan.name] else {
                 throw AppRuntimeError("The \(plan.name) service was not prepared.")
             }
@@ -610,6 +665,7 @@ actor PrivateOCIStackRuntime {
             await event(.progress(0.65, "Creating one private Linux pod"))
             try await pod.create()
             self.pod = pod
+            try Task.checkCancellation()
             await event(.containerLines("runtime", ["Starting private DHCP network configuration"]))
 
             await event(.phase(.starting))
@@ -632,6 +688,8 @@ actor PrivateOCIStackRuntime {
             await event(.log("VM socket relay is serving localhost:\(hostPort)"))
 
             await event(.progress(1, "Opening ChatBotKit Community"))
+            try Task.checkCancellation()
+            try JSONEncoder().encode(protectedImages.sorted()).write(to: dataRoot.appendingPathComponent("protected-images.json"), options: .atomic)
             return StackInfo(
                 url: URL(string: "http://127.0.0.1:\(hostPort)/")!,
                 podID: String(identifier),
@@ -643,36 +701,51 @@ actor PrivateOCIStackRuntime {
             )
         } catch {
             for name in serviceNames { await event(.service(name, .failed)) }
-            try? await pod.stop()
-            self.pod = nil
-            localForwarder.stop()
-            forwarder = nil
             let log = outputs.values.map { $0.text() }.joined(separator: "\n")
             if !log.isEmpty { await event(.log(String(log.suffix(1200)))) }
             throw error
         }
     }
 
-    func stop() async {
+    func stop() async throws -> [String] {
         forwarder?.stop()
         forwarder = nil
-        if let pod { try? await pod.stop() }
+        var warnings: [String] = []
+        if let pod {
+            warnings = try await GracefulShutdown.run(
+                started: startedServices,
+                terminate: { name in
+                    do { try await pod.killContainer(name, signal: .term) }
+                    catch {
+                        // A previously healthy service may already have exited.
+                        guard (try? await pod.waitContainer(name, timeoutInSeconds: 1)) != nil else { throw error }
+                    }
+                },
+                wait: { name, seconds in _ = try await pod.waitContainer(name, timeoutInSeconds: seconds) },
+                force: { try await pod.killContainer($0, signal: .kill) },
+                teardown: { try await pod.stop() }
+            )
+        }
+        // Retain ownership if teardown throws so a retry can clean up the VM.
         pod = nil
+        startedServices.removeAll()
         bridgeProcess = nil
         outputs.removeAll()
+        storageLease?.release()
+        storageLease = nil
+        return warnings
     }
 
     private func prepareInitfs(store: ImageStore, at path: URL) async throws -> Containerization.Mount {
         if FileManager.default.fileExists(atPath: path.path) {
             return .block(format: "ext4", source: path.path, destination: "/", options: ["ro"])
         }
-        do {
+        try DiskSafety.require(at: path.deletingLastPathComponent(), additional: Int64(512.mib()))
+        try await DiskSafety.replace(at: path) { staging in
             let image = try await store.getInitImage(reference: Self.initImage)
-            return try await image.initBlock(at: path, for: .linuxArm)
-        } catch {
-            try? FileManager.default.removeItem(at: path)
-            throw error
+            _ = try await image.initBlock(at: staging, for: .linuxArm)
         }
+        return .block(format: "ext4", source: path.path, destination: "/", options: ["ro"])
     }
 
     private func prepareRootfs(image: Containerization.Image, digest: String, at path: URL) async throws -> Containerization.Mount {
@@ -682,31 +755,27 @@ actor PrivateOCIStackRuntime {
            (try? String(contentsOf: stamp, encoding: .utf8)) == formatIdentity {
             return .block(format: "ext4", source: path.path, destination: "/")
         }
-        try? FileManager.default.removeItem(at: path)
-        try? FileManager.default.removeItem(at: stamp)
-        do {
-            let mount = try await EXT4Unpacker(capacityInBytes: 4.gib(), journal: .default)
-                .unpack(image, for: .current, at: path)
-            try formatIdentity.write(to: stamp, atomically: true, encoding: .utf8)
-            return mount
-        } catch {
-            try? FileManager.default.removeItem(at: path)
-            throw error
+        try DiskSafety.require(at: path.deletingLastPathComponent(), additional: Int64(4.gib()))
+        try await DiskSafety.replace(at: path) { staging in
+            _ = try await EXT4Unpacker(capacityInBytes: 4.gib(), journal: .default)
+                .unpack(image, for: .current, at: staging)
         }
+        // Disk first, identity second: interruption may cause a safe rebuild,
+        // but can never label an old disk with the new image's identity.
+        try formatIdentity.write(to: stamp, atomically: true, encoding: .utf8)
+        return .block(format: "ext4", source: path.path, destination: "/")
     }
 
-    private func prepareVolume(at path: URL, size: UInt64) throws {
+    private func prepareVolume(at path: URL, size: UInt64) async throws {
         guard !FileManager.default.fileExists(atPath: path.path) else { return }
-        do {
+        try DiskSafety.require(at: path.deletingLastPathComponent(), additional: Int64(size))
+        try await DiskSafety.replace(at: path) { staging in
             let formatter = try EXT4.Formatter(
-                FilePath(path.absolutePath()),
+                FilePath(staging.absolutePath()),
                 minDiskSize: size,
                 journal: .default
             )
             try formatter.close()
-        } catch {
-            try? FileManager.default.removeItem(at: path)
-            throw error
         }
     }
 
@@ -718,8 +787,11 @@ actor PrivateOCIStackRuntime {
     ) async throws {
         await event(.service(name, .starting))
         await event(.progress(progress, "Running \(name)"))
+        try Task.checkCancellation()
         try await pod.startContainer(name)
+        startedServices.insert(name)
         let status = try await pod.waitContainer(name, timeoutInSeconds: 180)
+        startedServices.remove(name)
         guard status.exitCode == 0 else {
             throw AppRuntimeError("\(name) exited with code \(status.exitCode): \(outputs[name]?.text().suffix(800) ?? "")")
         }
@@ -737,9 +809,12 @@ actor PrivateOCIStackRuntime {
     ) async throws {
         await event(.service(name, .starting))
         await event(.progress(progress, "Starting \(name)"))
+        try Task.checkCancellation()
         try await pod.startContainer(name)
+        startedServices.insert(name)
         var last = "not ready"
         for attempt in 0..<attempts {
+            try Task.checkCancellation()
             let stdout = MemoryWriter()
             let stderr = MemoryWriter()
             do {
@@ -748,9 +823,7 @@ actor PrivateOCIStackRuntime {
                     configuration.stdout = stdout
                     configuration.stderr = stderr
                 }
-                try await process.start()
-                let status = try await process.wait(timeoutInSeconds: 5)
-                try? await process.delete()
+                let status = try await runProbe(process, timeout: 5)
                 if status.exitCode == 0 {
                     await event(.service(name, .healthy))
                     await event(.log("\(name) is healthy"))
@@ -765,6 +838,7 @@ actor PrivateOCIStackRuntime {
             // Wait briefly for that status and its drained logs instead of hiding
             // the cause behind another minute of failing exec calls.
             if let status = try? await pod.waitContainer(name, timeoutInSeconds: 1) {
+                startedServices.remove(name)
                 throw AppRuntimeError(StartupFailure.message(
                     service: name, output: outputs[name]?.text() ?? "",
                     fallback: last, exitCode: Int32(status.exitCode)
@@ -807,12 +881,11 @@ actor PrivateOCIStackRuntime {
 
         var socketReady = false
         for attempt in 0..<40 {
+            try Task.checkCancellation()
             let check = try await pod.execInContainer("platform", processID: "bridge-check-\(attempt)") { configuration in
                 configuration.arguments = ["node", "-e", "const n=require('net').connect('/tmp/private-oci-http.sock');n.on('connect',()=>process.exit(0));n.on('error',()=>process.exit(1));"]
             }
-            try await check.start()
-            let status = try await check.wait(timeoutInSeconds: 2)
-            try? await check.delete()
+            let status = try await runProbe(check, timeout: 2)
             if status.exitCode == 0 { socketReady = true; break }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -827,6 +900,20 @@ actor PrivateOCIStackRuntime {
                 direction: .outOf
             )
         )
+    }
+
+    private func runProbe(_ process: LinuxProcess, timeout: Int64) async throws -> ExitStatus {
+        try await ScopedProbe.run {
+            try Task.checkCancellation()
+            try await process.start()
+            return try await process.wait(timeoutInSeconds: timeout)
+        } cleanup: { failed in
+            if failed {
+                try? await process.kill(.kill)
+                _ = try? await process.wait(timeoutInSeconds: 2)
+            }
+            try await process.delete()
+        }
     }
 
     private func makePlans(bundle: OCIStackBundle, hostPort: UInt16, garageFile: URL) -> [ServicePlan] {
@@ -910,8 +997,29 @@ final class AppModel: ObservableObject {
     @Published private(set) var containerLogs: [ContainerLogEntry] = []
     @Published private(set) var startupProgress = 0.0
     @Published private(set) var startupDetail = "Preparing your workspace"
-    private let runtime = PrivateOCIStackRuntime()
+    @Published private(set) var storageReport: StorageReport?
+    @Published private(set) var storageError: String?
+    @Published private(set) var storageBusy = false
+    private var storageTask: Task<Void, Never>?
+    private let runtime: any StackRuntime
+    private let resources: @MainActor () throws -> (kernel: URL, data: URL)
     private var task: Task<Void, Never>?
+    private var shutdownTask: Task<Bool, Never>?
+    private var generation = UUID()
+    private(set) var isShuttingDown = false
+
+    init(
+        runtime: any StackRuntime = PrivateOCIStackRuntime(),
+        resources: @escaping @MainActor () throws -> (kernel: URL, data: URL) = {
+            guard let kernel = Bundle.main.url(forResource: "vmlinux-arm64", withExtension: nil, subdirectory: "Runtime") else {
+                throw AppRuntimeError("The bundled Linux kernel is missing.")
+            }
+            return (kernel, try AppModel.privateDataRoot())
+        }
+    ) {
+        self.runtime = runtime
+        self.resources = resources
+    }
 
     var info: StackInfo? {
         if case let .ready(info) = phase { return info }
@@ -921,25 +1029,31 @@ final class AppModel: ObservableObject {
     func start() {
         // A restored or auxiliary window may ask the shared model to start.
         // Only the initial idle state is allowed to create the private pod.
-        guard case .idle = phase else { return }
-        task?.cancel()
+        guard case .idle = phase, !isShuttingDown, !storageBusy, !RuntimeSmokeTest.requested else { return }
+        phase = .resolving
+        generation = UUID()
+        let run = generation
         containerLogs.append(.init(service: "runtime", message: "—— starting \(defaultOCIReference) ——"))
         services = Dictionary(uniqueKeysWithValues: serviceNames.map { ($0, .pending) })
         events = ["OCI source: \(defaultOCIReference)", "Runtime is private to this app"]
         startupProgress = 0
         startupDetail = "Preparing your workspace"
         task = Task {
+            defer { if generation == run { task = nil } }
             do {
-                guard let kernelURL = Bundle.main.url(forResource: "vmlinux-arm64", withExtension: nil, subdirectory: "Runtime") else {
-                    throw AppRuntimeError("The bundled Linux kernel is missing.")
+                try Task.checkCancellation()
+                let paths = try resources()
+                let info = try await runtime.start(kernelURL: paths.kernel, dataRoot: paths.data) { [weak self] event in
+                    guard let self, self.generation == run, !self.isShuttingDown else { return }
+                    self.apply(event)
                 }
-                let info = try await runtime.start(kernelURL: kernelURL, dataRoot: try Self.privateDataRoot()) { [weak self] event in
-                    self?.apply(event)
-                }
+                try Task.checkCancellation()
+                guard generation == run else { return }
                 phase = .ready(info)
             } catch is CancellationError {
-                phase = .idle
+                if generation == run { phase = .idle }
             } catch {
+                guard generation == run else { return }
                 phase = .failed(error.localizedDescription)
                 appendContainerLines(service: "runtime", lines: ["Error: \(diagnosticDescription(for: error))"])
                 append("Error: \(error.localizedDescription)")
@@ -947,17 +1061,37 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func restart() {
-        guard !phase.busy else { return }
-        task?.cancel()
+    func restart(cleanup: StorageReport? = nil) {
+        guard !phase.busy, !isShuttingDown, !storageBusy else { return }
+        let previous = task
+        previous?.cancel()
+        generation = UUID()
+        let run = generation
+        phase = .stopping
+        startupProgress = 0.02
+        startupDetail = "Stopping the current stack"
         task = Task {
-            phase = .stopping
-            startupProgress = 0.02
-            startupDetail = "Stopping the current stack"
-            await runtime.stop()
-            services = services.mapValues { _ in .stopped }
-            phase = .idle
-            start()
+            defer { if generation == run { task = nil } }
+            await previous?.value
+            guard !Task.isCancelled, generation == run else { return }
+            do {
+                let warnings = try await runtime.stop()
+                guard !Task.isCancelled, generation == run else { return }
+                appendContainerLines(service: "runtime", lines: warnings)
+                if let cleanup {
+                    let summary = try await StorageMaintenance.clean(root: resources().data, preview: cleanup)
+                    appendContainerLines(service: "runtime", lines: [summary])
+                    storageReport = nil
+                    try Task.checkCancellation()
+                }
+                services = services.mapValues { _ in .stopped }
+                phase = .idle
+                start()
+            } catch {
+                guard generation == run else { return }
+                phase = .failed(error.localizedDescription)
+                appendContainerLines(service: "runtime", lines: [error.localizedDescription])
+            }
         }
     }
 
@@ -969,9 +1103,51 @@ final class AppModel: ObservableObject {
         containerLogs.removeAll(keepingCapacity: true)
     }
 
-    func shutdown() async {
-        task?.cancel()
-        await runtime.stop()
+    func inspectStorage() {
+        guard !phase.busy, !isShuttingDown, !storageBusy else { return }
+        storageBusy = true
+        storageError = nil
+        let digest = info?.resolvedDigest
+        storageTask = Task {
+            defer { storageBusy = false; storageTask = nil }
+            do { storageReport = try await StorageMaintenance.inspect(root: resources().data, activeDigest: digest) }
+            catch { storageError = error.localizedDescription }
+        }
+    }
+
+    func shutdown() async -> Bool {
+        if let shutdownTask { return await shutdownTask.value }
+        isShuttingDown = true
+        generation = UUID()
+        phase = .stopping
+        let previous = task
+        previous?.cancel()
+        let inspection = storageTask
+        inspection?.cancel()
+        let operation = Task { @MainActor in
+            // Await cancellation/cleanup before touching the runtime again.
+            await previous?.value
+            await inspection?.value
+            do {
+                let warnings = try await runtime.stop()
+                appendContainerLines(service: "runtime", lines: warnings)
+                services = services.mapValues { _ in .stopped }
+                phase = .idle
+                return true
+            } catch {
+                phase = .failed(error.localizedDescription)
+                appendContainerLines(service: "runtime", lines: [error.localizedDescription])
+                return false
+            }
+        }
+        shutdownTask = operation
+        let succeeded = await operation.value
+        task = nil
+        if !succeeded {
+            isShuttingDown = false
+            shutdownTask = nil
+        }
+        return succeeded
     }
 
     private func apply(_ event: RuntimeEvent) {
@@ -1078,9 +1254,12 @@ struct EmbeddedWebView: NSViewRepresentable {
     let colorScheme: ColorScheme
     let onEdgeColors: @MainActor (NSColor, NSColor) -> Void
     let onReady: @MainActor () -> Void
+    var onLoading: @MainActor () -> Void = {}
+    var onFailure: @MainActor (String) -> Void = { _ in }
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        let externalBrowserWindows = ExternalBrowserWindowDelegate()
         var loaded: URL?
         private weak var observedWebView: WKWebView?
         private var themeColorObservation: NSKeyValueObservation?
@@ -1093,20 +1272,38 @@ struct EmbeddedWebView: NSViewRepresentable {
         private var lastBottomRight: NSColor?
         let onEdgeColors: @MainActor (NSColor, NSColor) -> Void
         let onReady: @MainActor () -> Void
+        let onLoading: @MainActor () -> Void
+        let onFailure: @MainActor (String) -> Void
+        private var activeNavigation: WKNavigation?
+        private lazy var readiness = WebPageLoad { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .loading: self.onLoading()
+            case .ready: self.onReady()
+            case .failed(let message): self.onFailure(message)
+            }
+        }
         init(
             onEdgeColors: @escaping @MainActor (NSColor, NSColor) -> Void,
-            onReady: @escaping @MainActor () -> Void
+            onReady: @escaping @MainActor () -> Void,
+            onLoading: @escaping @MainActor () -> Void = {},
+            onFailure: @escaping @MainActor (String) -> Void = { _ in }
         ) {
             self.onEdgeColors = onEdgeColors
             self.onReady = onReady
+            self.onLoading = onLoading
+            self.onFailure = onFailure
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard navigation === activeNavigation else { return }
             publishColors(from: webView)
-            waitForFirstPaint(in: webView)
+            readiness.documentFinished()
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            activeNavigation = navigation
+            readiness.begin()
             sampledTopEdgeColor = nil
             webView.underPageBackgroundColor = nil
             derivedPageBackgroundColor = webView.underPageBackgroundColor
@@ -1114,13 +1311,34 @@ struct EmbeddedWebView: NSViewRepresentable {
             publishColors(from: webView)
         }
 
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            navigationFailed(navigation, error: error)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            navigationFailed(navigation, error: error)
+        }
+
+        private func navigationFailed(_ navigation: WKNavigation?, error: Error) {
+            guard navigation === activeNavigation else { return }
+            readiness.fail(error.localizedDescription)
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard observedWebView === webView else { return }
+            readiness.fail("The web page process stopped. Your container stack is still running; reload the page to reconnect.")
+        }
+
         func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
             guard message.name == Self.topEdgeMessageName,
+                  message.frameInfo.isMainFrame,
                   let components = message.body as? [NSNumber],
-                  components.count == 4 else { return }
+                  components.count == 4,
+                  components.prefix(3).allSatisfy({ $0.doubleValue.isFinite && (0...255).contains($0.doubleValue) }),
+                  components[3].doubleValue.isFinite, (0...1).contains(components[3].doubleValue) else { return }
             // CSS computed colors are defined in sRGB. Preserve that color
             // space explicitly so AppKit does not shift the sampled shade.
             let color = NSColor(
@@ -1138,26 +1356,6 @@ struct EmbeddedWebView: NSViewRepresentable {
                 // seamlessly into top overscroll.
                 observedWebView.underPageBackgroundColor = color
                 publishColors(from: observedWebView)
-            }
-        }
-
-        private func waitForFirstPaint(in webView: WKWebView, attempt: Int = 0) {
-            webView.takeSnapshot(with: nil) { [weak self, weak webView] image, _ in
-                guard let self else { return }
-                if let image, let webView, Self.containsVisiblePixels(image) {
-                    self.publishColors(from: webView)
-                    self.onReady()
-                } else if let webView, attempt < 90 {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(200))
-                        self.waitForFirstPaint(in: webView, attempt: attempt + 1)
-                    }
-                } else if let webView {
-                    self.publishColors(from: webView)
-                    self.onReady()
-                } else {
-                    self.onReady()
-                }
             }
         }
 
@@ -1204,6 +1402,8 @@ struct EmbeddedWebView: NSViewRepresentable {
         }
 
         func stopColorObservation() {
+            readiness.invalidate()
+            activeNavigation = nil
             appearanceSampleTask?.cancel()
             appearanceSampleTask = nil
             themeColorObservation?.invalidate()
@@ -1233,15 +1433,6 @@ struct EmbeddedWebView: NSViewRepresentable {
                 && abs(lhs.greenComponent - rhs.greenComponent) < 0.01
                 && abs(lhs.blueComponent - rhs.blueComponent) < 0.01
                 && abs(lhs.alphaComponent - rhs.alphaComponent) < 0.01
-        }
-
-        private static func containsVisiblePixels(_ image: NSImage) -> Bool {
-            guard let data = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data),
-                  bitmap.pixelsWide > 4, bitmap.pixelsHigh > 4 else { return false }
-            return [(1, 1), (bitmap.pixelsWide / 2, bitmap.pixelsHigh / 2), (bitmap.pixelsWide - 2, bitmap.pixelsHigh - 2)].contains { x, y in
-                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
-                return color.redComponent + color.greenComponent + color.blueComponent > 0.06
-            }
         }
 
         static let topEdgeMessageName = "privateOCIStackTopEdgeColor"
@@ -1341,7 +1532,7 @@ struct EmbeddedWebView: NSViewRepresentable {
         """#
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(onEdgeColors: onEdgeColors, onReady: onReady) }
+    func makeCoordinator() -> Coordinator { Coordinator(onEdgeColors: onEdgeColors, onReady: onReady, onLoading: onLoading, onFailure: onFailure) }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -1358,6 +1549,7 @@ struct EmbeddedWebView: NSViewRepresentable {
         ))
         let view = DraggableWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
+        view.uiDelegate = context.coordinator.externalBrowserWindows
         view.isInspectable = true
         // Begin with WebKit's derived <html>/<body> background. Once the
         // document's top-edge color is sampled, the coordinator overrides
@@ -1385,10 +1577,12 @@ struct EmbeddedWebView: NSViewRepresentable {
 
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
         coordinator.stopColorObservation()
+        view.navigationDelegate = nil
+        view.uiDelegate = nil
+        view.stopLoading()
         view.configuration.userContentController.removeScriptMessageHandler(
             forName: Coordinator.topEdgeMessageName
         )
-        view.navigationDelegate = nil
     }
 
     private func applyAppearance(to view: WKWebView) {
@@ -1535,6 +1729,7 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
     @SwiftUI.State private var pageIsReady = false
+    @SwiftUI.State private var pageError: String?
     @SwiftUI.State private var pageThemeColor = NSColor.windowBackgroundColor
     @SwiftUI.State private var pageBackgroundColor = NSColor.windowBackgroundColor
 
@@ -1555,12 +1750,23 @@ struct ContentView: View {
                             pageBackgroundColor = backgroundColor
                         },
                         onReady: {
+                            pageError = nil
                             withAnimation(.easeOut(duration: 0.55)) { pageIsReady = true }
-                        }
+                        },
+                        onLoading: { pageError = nil; pageIsReady = false },
+                        onFailure: { pageError = $0; pageIsReady = false }
                     )
                 }
                 if !pageIsReady {
-                    if case let .failed(message) = model.phase { FailureView(message: message).transition(.opacity) }
+                    if let pageError, model.info != nil {
+                        VStack(spacing: 16) {
+                            Label("The page couldn’t load", systemImage: "exclamationmark.circle").font(.title2)
+                            Text(pageError).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                            Button("Reload Page") { EmbeddedWebInspector.shared.reload() }
+                            Text("The container stack has not been restarted.").font(.caption).foregroundStyle(.secondary)
+                        }.padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color(nsColor: StudioBrand.background))
+                    } else if case let .failed(message) = model.phase { FailureView(message: message).transition(.opacity) }
                     else { StartupView(model: model).transition(.opacity) }
                 }
             }
@@ -1573,8 +1779,8 @@ struct ContentView: View {
             pageIsReady: pageIsReady,
             pageBackgroundColor: pageBackgroundColor
         ))
-        .onChange(of: model.info?.podID) { _, _ in pageIsReady = false }
-        .task { model.start() }
+        .onChange(of: model.info?.podID) { _, _ in pageIsReady = false; pageError = nil }
+        .task { if !RuntimeSmokeTest.requested { model.start() } }
     }
 }
 
@@ -1849,6 +2055,7 @@ struct StackCommands: Commands {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Button("Show Stack Details") { openWindow(id: "stack-details") }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("Manage Storage") { openWindow(id: "storage") }
             Divider()
             Button("Show Web Inspector") { EmbeddedWebInspector.shared.show() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
@@ -1865,14 +2072,46 @@ struct StackCommands: Commands {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard RuntimeSmokeTest.requested else { return }
+        Task {
+            do {
+                guard let kernel = Bundle.main.url(forResource: "vmlinux-arm64", withExtension: nil, subdirectory: "Runtime") else { throw AppRuntimeError("Smoke-test kernel is missing.") }
+                try await RuntimeSmokeTest.run(kernel: kernel)
+                print("STUDIO_SMOKE_PASS: SIGTERM, clean exit, persistent-volume marker, and VM teardown verified. Disposable runtime removed.")
+                fflush(nil)
+                finishSmokeTest()
+            } catch {
+                print("STUDIO_SMOKE_FAIL: \(error.localizedDescription)")
+                fflush(nil)
+                finishSmokeTest()
+            }
+        }
+    }
+
+    private func finishSmokeTest() {
+        // terminateLater enters AppKit's nested termination event loop. Enter
+        // it from the run loop, not while occupying the Swift main-actor queue,
+        // so the normal asynchronous shutdown delegate can finish.
+        RunLoop.main.perform {
+            MainActor.assumeIsolated { NSApplication.shared.terminate(nil) }
+        }
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task {
-            await AppModel.shared.shutdown()
-            sender.reply(toApplicationShouldTerminate: true)
+            let stopped = await AppModel.shared.shutdown()
+            sender.reply(toApplicationShouldTerminate: stopped)
+            if !stopped {
+                let alert = NSAlert()
+                alert.messageText = "Studio could not safely stop its stack"
+                alert.informativeText = "The app has stayed open. Check Stack → Show Live Logs, then try quitting again."
+                alert.runModal()
+            }
         }
         return .terminateLater
     }
@@ -1900,5 +2139,7 @@ struct StudioApp: App {
         Window("About Studio", id: "about-studio") { AboutStudioView() }
             .windowResizability(.contentSize)
             .defaultPosition(.center)
+        Window("Studio Storage", id: "storage") { StorageView(model: model) }
+            .windowResizability(.contentSize)
     }
 }
