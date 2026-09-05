@@ -15,7 +15,7 @@ if [[ "${STUDIO_REQUIRE_DEVELOPER_ID:-0}" == 1 && "$signature" != *'Authority=De
 fi
 entitlements="$(codesign -d --entitlements - --xml "$app" 2>/dev/null | tr -d '[:space:]')"
 count="$(printf '%s' "$entitlements" | grep -o '<key>' | wc -l | tr -d '[:space:]')"
-[[ "$count" == 4 ]] || { echo 'Unexpected sandbox entitlement count.' >&2; exit 1; }
+[[ "$count" == 5 ]] || { echo 'Unexpected sandbox entitlement count.' >&2; exit 1; }
 for key in app-sandbox network.client network.server virtualization; do
     [[ "$entitlements" == *"<key>com.apple.security.$key</key><true/>"* ]] || {
         echo "Missing required entitlement: $key" >&2; exit 1;
@@ -23,7 +23,7 @@ for key in app-sandbox network.client network.server virtualization; do
 done
 while IFS= read -r dependency; do
     case "$dependency" in
-        /System/Library/*|/usr/lib/*) ;;
+        /System/Library/*|/usr/lib/*|@rpath/Sparkle.framework/Versions/B/Sparkle) ;;
         *) echo "Unexpected external library: $dependency" >&2; exit 1 ;;
     esac
 done < <(otool -L "$binary" | awk '/^\t/ {print $1}')
@@ -31,4 +31,5 @@ done < <(otool -L "$binary" | awk '/^\t/ {print $1}')
 test -s "$app/Contents/Resources/Runtime/vmlinux-arm64"
 test -s "$app/Contents/Resources/Studio.icns"
 plutil -lint "$app/Contents/Info.plist"
-echo 'Verified: hardened runtime, four approved sandbox entitlements, arm64, system-only linkage.'
+bash "$(dirname "${BASH_SOURCE[0]}")/verify-updater.sh" "$app"
+echo 'Verified: hardened runtime, five-key approved sandbox policy, arm64, system/bundled-Sparkle linkage.'

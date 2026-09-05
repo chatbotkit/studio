@@ -10,5 +10,10 @@
     <true/>
     <key>com.apple.security.network.server</key>
     <true/>
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>ai.cbk.private-oci-stack-spks</string>
+        <string>ai.cbk.private-oci-stack-spki</string>
+    </array>
 </dict>
 </plist>

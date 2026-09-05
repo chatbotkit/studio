@@ -32,11 +32,11 @@ jobs:
         run: swift test -c release
       - name: Build and verify sandboxed app
         run: scripts/build-app.sh
-      - name: Package development build
+      - name: Package inspection build (not runnable without team signing)
         run: ditto -c -k --sequesterRsrc --keepParent dist/Studio.app dist/Studio-development-macOS-arm64.zip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: Studio-development-macOS-arm64
+          name: Studio-packaging-inspection-macOS-arm64
           path: dist/Studio-development-macOS-arm64.zip
           if-no-files-found: error
           retention-days: 7

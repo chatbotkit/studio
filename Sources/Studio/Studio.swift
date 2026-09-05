@@ -1007,6 +1007,7 @@ final class AppModel: ObservableObject {
     private var shutdownTask: Task<Bool, Never>?
     private var generation = UUID()
     private(set) var isShuttingDown = false
+    private(set) var hasCompletedShutdown = false
 
     init(
         runtime: any StackRuntime = PrivateOCIStackRuntime(),
@@ -1133,6 +1134,7 @@ final class AppModel: ObservableObject {
                 appendContainerLines(service: "runtime", lines: warnings)
                 services = services.mapValues { _ in .stopped }
                 phase = .idle
+                hasCompletedShutdown = true
                 return true
             } catch {
                 phase = .failed(error.localizedDescription)
@@ -1148,6 +1150,14 @@ final class AppModel: ObservableObject {
             shutdownTask = nil
         }
         return succeeded
+    }
+
+    func recoverFromAbortedUpdate() {
+        guard hasCompletedShutdown else { return }
+        hasCompletedShutdown = false
+        isShuttingDown = false
+        shutdownTask = nil
+        phase = .failed("The update was interrupted. Choose Stack → Restart Stack to reopen your workspace.")
     }
 
     private func apply(_ event: RuntimeEvent) {
@@ -2073,6 +2083,7 @@ struct StackCommands: Commands {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppUpdater.shared.start()
         guard RuntimeSmokeTest.requested else { return }
         Task {
             do {
@@ -2103,6 +2114,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Sparkle's normal relaunch path already awaited verified teardown.
+        // Resumed installs and ordinary quits still use the same shutdown guard.
+        if AppModel.shared.hasCompletedShutdown { return .terminateNow }
         Task {
             let stopped = await AppModel.shared.shutdown()
             sender.reply(toApplicationShouldTerminate: stopped)
@@ -2128,6 +2142,10 @@ struct StudioApp: App {
             .windowStyle(.hiddenTitleBar)
             .windowResizability(.contentMinSize)
             .commands { StackCommands(model: model) }
+            .commands {
+                CommandGroup(after: .appInfo) { CheckForUpdatesButton() }
+            }
+        Settings { UpdatesSettingsView() }
         Window("Stack Details", id: "stack-details") {
             StackDetailsView(model: model).tint(Color(nsColor: StudioBrand.foreground))
         }

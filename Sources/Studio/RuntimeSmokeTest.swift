@@ -9,10 +9,16 @@ import SystemPackage
 /// AppModel's production data root. Packaging instructions use a distinct bundle
 /// identity so the live application cannot be reused by Launch Services.
 enum RuntimeSmokeTest {
-    static var requested: Bool { CommandLine.arguments.contains("--runtime-smoke-test") }
+    static var requested: Bool {
+        // Finder/UI tools may reopen the diagnostic without command-line args.
+        // Its dedicated identity must never start the normal community stack.
+        CommandLine.arguments.contains("--runtime-smoke-test") || Bundle.main.bundleIdentifier == "ai.cbk.studio.smoke-test"
+    }
     private static func stage(_ message: String) { FileHandle.standardOutput.write(Data("STUDIO_SMOKE_STAGE: \(message)\n".utf8)) }
 
     static func run(kernel: URL) async throws {
+        stage("Validating the packaged Sparkle configuration (no update check)")
+        try await AppUpdater.shared.validateConfigurationForSmokeTest()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("studio-smoke-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         var safeToRemove = true

@@ -173,6 +173,22 @@ private actor FakeStackRuntime: StackRuntime {
     #expect(await model.shutdown())
 }
 
+@Test @MainActor func abortedUpdateAfterShutdownAllowsExplicitStackRestart() async throws {
+    let runtime = FakeStackRuntime()
+    let model = fixture(runtime)
+    model.start()
+    try await eventually { model.info != nil }
+    #expect(await model.shutdown())
+    #expect(model.hasCompletedShutdown)
+    model.recoverFromAbortedUpdate()
+    #expect(!model.hasCompletedShutdown)
+    #expect(!model.isShuttingDown)
+    model.restart()
+    try await eventually { model.info != nil }
+    #expect(await runtime.starts == 2)
+    #expect(await model.shutdown())
+}
+
 @Test @MainActor func shutdownAwaitsStartupAndCoalescesConcurrentRequests() async throws {
     let runtime = FakeStackRuntime()
     await runtime.configure(holdStart: true)

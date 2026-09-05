@@ -10,13 +10,15 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/containerization.git", exact: "0.43.0"),
-        .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4")
+        .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4")
     ],
     targets: [
         .executableTarget(
             name: "Studio",
             dependencies: [
                 "StudioConfiguration",
+                .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationEXT4", package: "containerization"),
                 .product(name: "ContainerizationIO", package: "containerization"),
@@ -27,7 +29,8 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("WebKit"),
-                .linkedFramework("Network")
+                .linkedFramework("Network"),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
         .target(name: "StudioConfiguration"),

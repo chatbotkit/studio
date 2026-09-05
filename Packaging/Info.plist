@@ -26,5 +26,23 @@
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/chatbotkit/studio/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>598heLqDe1S+kD01yUaXPKqiyrcfzRJOiVVtuF+2ZsY=</string>
+    <key>SURequireSignedFeed</key>
+    <true/>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
+    <key>SUSendProfileInfo</key>
+    <false/>
 </dict>
 </plist>
