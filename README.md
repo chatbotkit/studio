@@ -13,7 +13,7 @@ git lfs pull
 open dist/Studio.app
 ```
 
-The script builds a release executable and assembles a sandboxed, hardened-runtime, ad-hoc-signed app. Set `STUDIO_SIGNING_IDENTITY` to choose another signing identity. For compilation alone, run `swift build`; launching the stack requires the packaged app and its kernel resource.
+The script builds a release executable and assembles a sandboxed, hardened-runtime app. It chooses an available Apple Development or Developer ID certificate; set `STUDIO_SIGNING_IDENTITY` to choose one explicitly. A real signing team is required to load Sparkle with library validation enabled. Without a certificate, packaging still produces an ad-hoc inspection artifact, but that artifact cannot launch; no library-validation exception is added. For compilation alone, run `swift build`; launching the stack requires the team-signed packaged app and its kernel resource.
 
 The app downloads images on first launch and needs sufficient free disk space for its image store, service disks, and persistent volumes. It publishes the platform on localhost:3000, selecting the next available port if necessary. Logs, stack details, reload, and Web Inspector are available in the Stack menu.
 
@@ -52,10 +52,16 @@ The product and executable are named Studio. The existing bundle identifier `ai.
 
 Updated builds lock their runtime directory across processes while running or cleaning caches. Older prototypes do not honor this lock and must still be quit manually before using the same runtime data.
 
-The app retains its existing sandbox entitlements: App Sandbox, network client, network server (local port forwarding), and virtualization. There are no bundled macOS helper executables; Containerization is linked into the app and the Linux kernel boots inside the VM.
+The app retains App Sandbox, network client, network server (local port forwarding), and virtualization. Automatic updates add one approved entitlement containing only the `ai.cbk.private-oci-stack-spks` and `ai.cbk.private-oci-stack-spki` installer communication names. Sparkle's signed Installer XPC service, Autoupdate, and Updater app run outside the host sandbox for the update workflow. Its unnecessary Downloader service is removed. No file-access, automation, or other SuperBot permissions are copied. Containerization remains linked into the sandboxed app and the Linux kernel boots inside the VM.
+
+## App updates
+
+Signed releases include Sparkle 2.9.4, Check for Updates in the Studio menu, and update preferences in Settings. Updates use a signed GitHub appcast plus Ed25519 archive verification before extraction. Automatic checks default to daily; automatic download/install is off by default. Save work in the web page before installing: Studio cannot reliably detect unsaved form state inside arbitrary web content. Installation waits for stack operations, then confirms graceful VM teardown before relaunch. A failed shutdown blocks installation and can be retried in Settings.
+
+Local development and smoke builds disable updates so they cannot replace themselves with a public release. Only the release packaging path enables them. The first updater-enabled release must be installed manually: older releases without Sparkle cannot update themselves. App updates do not migrate or delete private container data, and are separate from resolving the community stack's moving OCI tag. See [release setup](docs/releases.md) for key handling and feed publication.
 
 ## CI and releases
 
-Pushes to `main` and pull requests run tests, build the app, verify its signature/security boundary, and retain a development ZIP for seven days. These ad-hoc-signed builds are not notarized public releases. CI uses GitHub's Apple silicon `macos-26` runner and its default Xcode; toolchain versions are logged. A full VM startup is a separate local smoke test, not assumed to work under hosted-runner nested virtualization.
+Pushes to `main` and pull requests run tests, assemble the app, verify its signature/security boundary, and retain a packaging-inspection ZIP for seven days. Without a signing certificate these ad-hoc artifacts cannot launch with hardened-runtime Sparkle; they are not notarized public releases. CI uses GitHub's Apple silicon `macos-26` runner and its default Xcode; toolchain versions are logged. A full VM startup is a separate local smoke test, not assumed to work under hosted-runner nested virtualization.
 
-The release workflow follows SuperBot's tag → Developer ID → notarization → stapled ZIP pattern, adapted for Studio's kernel, LFS assets, and four-key sandbox policy. See [release setup and checklist](docs/releases.md) before pushing the first version tag.
+The release workflow follows SuperBot's tag → Developer ID → notarization → stapled ZIP and signed appcast pattern, adapted for Studio's kernel, LFS assets, and approved five-key sandbox policy. See [release setup and checklist](docs/releases.md) before publishing a version tag.

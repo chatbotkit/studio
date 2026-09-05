@@ -9,10 +9,13 @@ Add these encrypted Actions secrets to `chatbotkit/studio` (the names match Supe
 - `APP_STORE_CONNECT_API_KEY_P8`: notarization API private key, as PEM text.
 - `APP_STORE_CONNECT_KEY_ID`: its key ID.
 - `APP_STORE_CONNECT_ISSUER_ID`: its issuer ID.
+- `SPARKLE_PRIVATE_KEY`: Studio's own base64 Ed25519 seed for signing update archives and feeds. Its matching public key is pinned in `Packaging/Info.plist` and verified during packaging.
 
 The workflow imports credentials into an ephemeral runner keychain with restrictive file permissions, never exposes them to pull-request CI, and removes the keychain and key files in an always-run cleanup step. SuperBot's secret values are not automatically available to Studio, and preparing this workflow does not copy them or grant a new repository access to them.
 
 ## Development checks
+
+See [updater integration validation](updater-validation.md) for the locally verified scope and remaining production upgrade checks.
 
 ```sh
 swift test -c release
@@ -22,14 +25,26 @@ scripts/verify-app.sh dist/Studio.app
 
 `STUDIO_BUILD_ROOT` selects a reusable Swift cache. `STUDIO_DIST_ROOT` redirects a local app build (useful for validating packaging without replacing a running app). Version comes from `VERSION`; build number comes from `STUDIO_BUILD_NUMBER`, the Actions run number, or local Git commit count.
 
-Verification requires an arm64 executable, hardened runtime, strict code signature verification, and only system-library linkage. Exactly these entitlements must be true, with no extras:
+Runnable local builds require a real Apple Development or Developer ID identity because hardened-runtime library validation rejects ad-hoc Sparkle loading. Local packaging automatically selects an available identity, or accepts `STUDIO_SIGNING_IDENTITY`. Certificate-free CI artifacts are explicitly packaging-inspection artifacts, not runnable installations. Release CI imports Developer ID credentials before packaging. No `disable-library-validation` entitlement is granted. The disposable VM script also requires a real local identity and re-signs its copy inside-out with that team.
+
+Verification requires an arm64 executable, hardened runtime, strict code signature verification, and only system-library or bundled Sparkle linkage. These four entitlements must be true:
 
 - `com.apple.security.app-sandbox`
 - `com.apple.security.network.client`
 - `com.apple.security.network.server`
 - `com.apple.security.virtualization`
 
-There are no macOS helper executables in this app. The bundled Linux kernel runs inside the VM. No sandbox exceptions from SuperBot are copied.
+The fifth entitlement, `com.apple.security.temporary-exception.mach-lookup.global-name`, contains exactly `ai.cbk.private-oci-stack-spks` and `ai.cbk.private-oci-stack-spki`. The user explicitly approved this installer exception. No other SuperBot exception is copied. Sparkle's Installer.xpc, Autoupdate, Updater.app, and framework are signed inside-out with hardened runtime and the same signing team. Installer tools run outside the sandbox to replace the app; they receive no additional entitlements. The Downloader XPC service is omitted because Studio already has network-client access. The bundled Linux kernel runs inside the VM.
+
+## Update signing and first-release bootstrap
+
+Studio uses its own Keychain account `ai.cbk.studio.updates` and GitHub Actions secret `SPARKLE_PRIVATE_KEY`. Never rotate the pinned public key casually: installed copies must be able to verify the next feed and archive. Back up the key securely through Sparkle's `generate_keys --account ai.cbk.studio.updates -x /secure/location/private.key`; never put exports in the repository or logs. The secret was configured for Studio during integration; SuperBot's signing key was not reused.
+
+The first updater-enabled release must be downloaded and installed manually. Existing 0.11.0 builds have no updater. Publish a new, higher product version when ready; subsequent Sparkle updates compare the release's `CFBundleVersion`, which now follows `VERSION` instead of a CI counter. Normal development bundles keep `StudioUpdatesEnabled=false`; the Developer ID release path sets it true.
+
+Packaging signs the final stapled ZIP and `appcast.xml` using Sparkle's pinned tools, verifies both signatures and the private/public key match, then publishes the assets as a draft release before marking it latest. The feed is `https://github.com/chatbotkit/studio/releases/latest/download/appcast.xml`. Do not edit signed feeds/archives after generation. A new version/tag is still required to publish; configuring secrets does not publish anything.
+
+Before shipping, test a signed older updater-enabled copy upgrading to a signed newer copy, including busy-stack postponement, shutdown failure, relaunch, and retained private data. Local ad-hoc builds and a generated feed do not establish a successful production installation, notarization, or clean-machine Gatekeeper result.
 
 ### Disposable local VM smoke test
 
@@ -37,13 +52,13 @@ There are no macOS helper executables in this app. The bundled Linux kernel runs
 bash scripts/runtime-smoke-test.sh /absolute/path/to/Studio.app
 ```
 
-This copies the supplied bundle into a unique temporary directory, assigns the diagnostic identity `ai.cbk.studio.smoke-test`, and ad-hoc signs/verifies it with the same four entitlements. It does not launch or replace the production app. The diagnostic verifies the current public Compose artifact, downloads small public VM/Alpine images, boots a temporary VM, sends SIGTERM, and checks a shutdown marker from a second container sharing its disposable ext4 volume before tearing down the VM. Runtime fixtures are removed only after confirmed teardown; failures to stop preserve them for investigation. The script retains its small diagnostic bundle and log and requires a `STUDIO_SMOKE_PASS` marker plus a successful process exit.
+This copies the supplied bundle into a unique temporary directory, assigns the diagnostic identity `ai.cbk.studio.smoke-test`, and signs/verifies it with a real local identity and the approved entitlement set. It validates Sparkle's packaged configuration with automatic checks/downloads disabled; it does not fetch an update feed or install an update. It does not launch or replace the production app. The diagnostic verifies the current public Compose artifact, downloads small public VM/Alpine images, boots a temporary VM, sends SIGTERM, and checks a shutdown marker from a second container sharing its disposable ext4 volume before tearing down the VM. Runtime fixtures are removed only after confirmed teardown; failures to stop preserve them for investigation. The script retains its diagnostic bundle and log and requires a `STUDIO_SMOKE_PASS` marker plus a successful process exit.
 
 Run this on Apple silicon with network access and at least 1 GiB free; allow additional room for temporary downloads and packaging. It is a real VM boundary test, not a full community-stack startup/migration test and not proof that every upstream service honors SIGTERM. It also does not substitute for Developer ID, Gatekeeper, or clean-machine release testing.
 
 ## Before the first public release
 
-- Configure the five secrets and confirm CI is green.
+- Configure the six secrets and confirm CI is green.
 - Decide whether to retain `ai.cbk.private-oci-stack` as the shipping bundle identifier. It is intentionally unchanged for existing sandbox data; any rename needs a migration plan.
 - Review the bundled Linux kernel's corresponding-source distribution and all dependency notices for public redistribution. The current kernel/provenance notices were carried over from the prototype.
 - Smoke-test the Developer ID-signed build on Apple silicon macOS 26: first launch/image download, existing-data startup, localhost access, shutdown/restart, logs, Web Inspector, and dragging the app into Applications.
@@ -62,6 +77,7 @@ This requires a clean `main`, creates an annotated `vX.Y.Z` tag, and atomically 
 
 - `Studio-X.Y.Z-macOS-arm64.zip`
 - `Studio-X.Y.Z-macOS-arm64.zip.sha256`
+- `appcast.xml` (signed Sparkle update feed)
 
 Local notarization is available via `scripts/package-release.sh vX.Y.Z` with `STUDIO_SIGNING_IDENTITY`, `APPLE_API_KEY_PATH`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER_ID` set. It refuses to overwrite an existing release archive. Notarization diagnostics stay in ignored `.release/` and never contain the private key.
 

@@ -8,10 +8,12 @@ tag="${1:?Usage: package-release.sh vX.Y.Z}"
 : "${APPLE_API_KEY_PATH:?Set the notarization API key path.}"
 : "${APPLE_API_KEY_ID:?Set the notarization key ID.}"
 : "${APPLE_API_ISSUER_ID:?Set the notarization issuer ID.}"
+: "${SPARKLE_PRIVATE_KEY_PATH:?Set the Studio update-signing key path.}"
 export STUDIO_REQUIRE_DEVELOPER_ID=1
 export STUDIO_CODESIGN_TIMESTAMP=1
 export STUDIO_DIST_ROOT="$repo_root/dist"
-export STUDIO_BUILD_NUMBER="${STUDIO_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-$(git -C "$repo_root" rev-list --count HEAD)}}"
+# Order updates by the product version, not a resettable CI run counter.
+export STUDIO_BUILD_NUMBER="$version"
 # Each submission gets its own temporary workspace; never clear dist or runtime data.
 mkdir -p "$repo_root/.release" "$STUDIO_DIST_ROOT"
 notary_dir="$(mktemp -d "$repo_root/.release/notary.XXXXXX")"
@@ -33,4 +35,5 @@ xcrun stapler validate "$app"
 spctl --assess --type execute --verbose=2 "$app"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
 (cd "$STUDIO_DIST_ROOT" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")
+bash "$repo_root/scripts/generate-update-feed.sh" "$archive" "$tag"
 echo "$archive"

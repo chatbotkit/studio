@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Sparkle app updates with signed GitHub feeds and archives, Check for Updates, update settings, and confirmed VM shutdown before installation. Development builds keep updates disabled; the first updater-enabled release requires manual installation.
+- Package and verify Sparkle's signed installer components with the explicitly approved, narrowly scoped sandbox communication exception. Configure a dedicated Studio signing key and CI feed publication without changing the released version.
 - Verify OCI manifest and configuration bytes before decoding; fetch each object once and reject oversized or ambiguous artifacts.
 - Make page loading independent of brightness, cancel superseded readiness work, and provide page-only retry after navigation failures, timeouts, or WebKit process termination.
 - Add Manage Storage with a confirmation-based obsolete-cache cleanup that preserves persistent volumes, backups, and service disks. Revalidate cleanup previews and exclude concurrent runtime owners.

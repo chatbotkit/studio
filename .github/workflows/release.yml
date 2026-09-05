@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: studio-release
   cancel-in-progress: false
 jobs:
   release:
@@ -68,6 +68,15 @@ jobs:
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/studio-notary.p8" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY_ID=$APP_STORE_CONNECT_KEY_ID" >> "$GITHUB_ENV"
           echo "APPLE_API_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID" >> "$GITHUB_ENV"
+      - name: Prepare update-signing key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${SPARKLE_PRIVATE_KEY:?Missing Studio update-signing key}"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/studio-update.key"
+          echo "SPARKLE_PRIVATE_KEY_PATH=$RUNNER_TEMP/studio-update.key" >> "$GITHUB_ENV"
       - name: Build, sign, notarize, and package
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -80,9 +89,11 @@ jobs:
           gh release create "$RELEASE_TAG" \
             "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip" \
             "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip.sha256" \
-            --verify-tag --generate-notes --title "Studio $STUDIO_VERSION"
+            "dist/appcast.xml" \
+            --draft --verify-tag --generate-notes --title "Studio $STUDIO_VERSION"
+          gh release edit "$RELEASE_TAG" --draft=false --latest
       - name: Remove temporary signing material
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/studio-signing.keychain-db" 2>/dev/null || true
-          rm -f "$RUNNER_TEMP/studio-signing.p12" "$RUNNER_TEMP/studio-notary.p8"
+          rm -f "$RUNNER_TEMP/studio-signing.p12" "$RUNNER_TEMP/studio-notary.p8" "$RUNNER_TEMP/studio-update.key"
