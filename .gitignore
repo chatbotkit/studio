@@ -7,6 +7,7 @@ DerivedData/
 # Generated applications, archives, and debug symbols
 build/
 dist/
+.release/
 *.app/
 *.dSYM/
 *.xcarchive/
@@ -25,7 +26,9 @@ xcuserdata/
 .env.*
 !.env.example
 *.p12
+*.pfx
 *.p8
+*.keychain-db
 *.key
 *.log
 *.ext4

@@ -1,0 +1,88 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      CLANG_MODULE_CACHE_PATH: ${{ github.workspace }}/.build/ModuleCache
+      SWIFTPM_MODULECACHE_OVERRIDE: ${{ github.workspace }}/.build/ModuleCache
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          lfs: true
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tag and release branch
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$RELEASE_TAG" = "v$version"
+          git merge-base --is-ancestor HEAD origin/main
+          echo "STUDIO_VERSION=$version" >> "$GITHUB_ENV"
+          test "$(uname -m)" = arm64
+          git lfs fsck
+      - name: Run regression tests
+        run: swift test -c release
+      - name: Import signing credentials
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${MACOS_CERTIFICATE_P12:?Missing certificate secret}"
+          : "${MACOS_CERTIFICATE_PASSWORD:?Missing certificate password secret}"
+          : "${APP_STORE_CONNECT_API_KEY_P8:?Missing notarization key secret}"
+          : "${APP_STORE_CONNECT_KEY_ID:?Missing notarization key ID}"
+          : "${APP_STORE_CONNECT_ISSUER_ID:?Missing notarization issuer ID}"
+          keychain="$RUNNER_TEMP/studio-signing.keychain-db"
+          password="$(openssl rand -base64 32)"
+          echo "::add-mask::$password"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/studio-signing.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/studio-signing.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security list-keychains -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application:/ {print $2; exit}')"
+          test -n "$identity"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_P8" > "$RUNNER_TEMP/studio-notary.p8"
+          echo "STUDIO_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/studio-notary.p8" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_ID=$APP_STORE_CONNECT_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID" >> "$GITHUB_ENV"
+      - name: Build, sign, notarize, and package
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: scripts/package-release.sh "$RELEASE_TAG"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip" \
+            "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip.sha256" \
+            --verify-tag --generate-notes --title "Studio $STUDIO_VERSION"
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/studio-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/studio-signing.p12" "$RUNNER_TEMP/studio-notary.p8"

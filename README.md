@@ -13,7 +13,7 @@ git lfs pull
 open dist/Studio.app
 ```
 
-The script builds a release executable and assembles a sandboxed, ad-hoc-signed app. Set `STUDIO_SIGNING_IDENTITY` to choose another signing identity. Notarization and distribution packaging are not automated yet. For compilation alone, run `swift build`; launching the stack requires the packaged app and its kernel resource.
+The script builds a release executable and assembles a sandboxed, hardened-runtime, ad-hoc-signed app. Set `STUDIO_SIGNING_IDENTITY` to choose another signing identity. For compilation alone, run `swift build`; launching the stack requires the packaged app and its kernel resource.
 
 The app downloads images on first launch and needs sufficient free disk space for its image store, service disks, and persistent volumes. It publishes the platform on localhost:3000, selecting the next available port if necessary. Logs, stack details, reload, and Web Inspector are available in the Stack menu.
 
@@ -31,6 +31,9 @@ Studio currently implements a platform-specific Compose adapter, not a general C
 - `Resources/Runtime/` — bundled Linux kernel, tracked with Git LFS.
 - `Resources/Brand/` — official CBK SVG symbol and wordmark, with pinned upstream provenance.
 - `scripts/build-app.sh` — local build and signing entry point.
+- `.github/workflows/` — build/test CI and tag-triggered signed releases.
+- `VERSION` — canonical application version, copied into the packaged Info.plist.
+- `scripts/package-release.sh` — Developer ID signing, notarization, stapling, ZIP and checksum.
 - `scripts/generate-brand-assets.swift` — renders the original vectors into template images and macOS icon sizes during packaging.
 - `docs/prototype-history.md` — imported prototype notes and implementation history.
 
@@ -43,3 +46,9 @@ Studio's native launch and error screens use solid white or black according to m
 The product and executable are named Studio. The existing bundle identifier `ai.cbk.private-oci-stack` and the `PrivateOCIStack/Runtime` Application Support path are deliberately retained so development builds can reuse the prototype's existing sandbox data. Renaming those requires a planned data migration. Quit the prototype before launching Studio against the same data.
 
 The app retains its existing sandbox entitlements: App Sandbox, network client, network server (local port forwarding), and virtualization. There are no bundled macOS helper executables; Containerization is linked into the app and the Linux kernel boots inside the VM.
+
+## CI and releases
+
+Pushes to `main` and pull requests run tests, build the app, verify its signature/security boundary, and retain a development ZIP for seven days. These ad-hoc-signed builds are not notarized public releases. CI uses GitHub's Apple silicon `macos-26` runner and its default Xcode; toolchain versions are logged. A full VM startup is a separate local smoke test, not assumed to work under hosted-runner nested virtualization.
+
+The release workflow follows SuperBot's tag → Developer ID → notarization → stapled ZIP pattern, adapted for Studio's kernel, LFS assets, and four-key sandbox policy. See [release setup and checklist](docs/releases.md) before pushing the first version tag.
