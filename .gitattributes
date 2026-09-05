@@ -1,0 +1,5 @@
+* text=auto
+*.swift text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+Resources/Runtime/vmlinux-* filter=lfs diff=lfs merge=lfs -text

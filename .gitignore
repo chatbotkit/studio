@@ -1,0 +1,35 @@
+# SwiftPM and local toolchain caches
+.build/
+.swiftpm/
+.cache/
+DerivedData/
+
+# Generated applications, archives, and debug symbols
+build/
+dist/
+*.app/
+*.dSYM/
+*.xcarchive/
+*.zip
+*.dmg
+*.pkg
+
+# Xcode user state and macOS metadata
+xcuserdata/
+*.xcuserstate
+.DS_Store
+._*
+
+# Local settings, credentials, and runtime data
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.key
+*.log
+*.ext4
+*.img
+*.raw
+*.qcow2
+*.sock
