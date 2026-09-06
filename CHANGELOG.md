@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apply each service's verified Compose environment, including YAML anchors and empty/unset semantics, so Studio trusted sign-in and current storage defaults match the distribution. Add loopback-only relay/storage forwarding and remove the stale Community loading label.
 - Switch the default OCI stack to `oci://ghcr.io/chatbotkit/platform-studio:latest`, share that reference with the isolated smoke test, and recognize Studio artifact layers while retaining Community compatibility.
 
 ## 0.12.0

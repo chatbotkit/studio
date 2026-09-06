@@ -11,7 +11,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/containerization.git", exact: "0.43.0"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4")
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4"),
+        .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2")
     ],
     targets: [
         .executableTarget(
@@ -33,8 +34,8 @@ let package = Package(
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
-        .target(name: "StudioConfiguration"),
-        .testTarget(name: "StudioConfigurationTests", dependencies: ["StudioConfiguration"]),
+        .target(name: "StudioConfiguration", dependencies: [.product(name: "Yams", package: "Yams")]),
+        .testTarget(name: "StudioConfigurationTests", dependencies: ["StudioConfiguration"], resources: [.copy("Fixtures")]),
         .testTarget(name: "StudioTests", dependencies: ["Studio"])
     ]
 )

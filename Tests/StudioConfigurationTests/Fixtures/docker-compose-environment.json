@@ -1,0 +1,59 @@
+{
+  "db-init": {
+    "PRISMA_DATABASE_URL": "file:/data/chatbotkit.db"
+  },
+  "garage": {
+    "RUST_LOG": "warn"
+  },
+  "garage-init": {
+    "GARAGE_ADMIN_TOKEN": "dev-admin-token",
+    "GARAGE_ADMIN_URL": "http://garage:3903",
+    "GARAGE_S3_URL": "http://garage:3900",
+    "STORAGE_ACCESS_KEY_ID": "",
+    "STORAGE_CORS_ORIGINS": "*",
+    "STORAGE_SECRET_ACCESS_KEY": ""
+  },
+  "platform": {
+    "APP_LABS_ORIGIN": "http://cbk-labs.localhost:3000",
+    "APP_MAIN_ORIGIN": "http://cbk-apps.localhost:3000",
+    "AUDIO_S3_BUCKET_NAME": "audio",
+    "CLOAK_ENCRYPTION_KEY": "",
+    "CONVERSATION_S3_BUCKET_NAME": "conversation",
+    "FILE_S3_BUCKET_NAME": "file",
+    "IMAGE_S3_BUCKET_NAME": "image",
+    "JWT_TOKEN_SECRET_KEY": "",
+    "NAMESPACE_S3_BUCKET_NAME": "namespace",
+    "NEXTAUTH_SECRET": "",
+    "NEXTAUTH_TRUSTED_SIGNIN": "true",
+    "NEXTAUTH_URL": "http://cbk.localhost:3000",
+    "NODE_ENV": "production",
+    "OPENAI_API_KEY": "",
+    "OPENROUTER_MODELS_API_KEY": "",
+    "OUTPUT_S3_BUCKET_NAME": "output",
+    "PORT": "3000",
+    "PORTAL_APEX": "cbk-portal.localhost",
+    "PRISMA_DATABASE_URL": "file:/data/chatbotkit.db",
+    "PRISMA_FIELD_ENCRYPTION_KEY": "",
+    "QDRANT_URL": "http://qdrant:6333",
+    "QUEUE_SECRET": "",
+    "REDIS_URL": "redis://redis:6379",
+    "RELAY_PORT": "3001",
+    "RELAY_URL": "http://cbk-relay.localhost:3001",
+    "SANDBOX_DATA_DIR": "/data/sandbox",
+    "SESSION_S3_BUCKET_NAME": "session",
+    "SITE_URL": "http://cbk.localhost:3000",
+    "SPACE_APEX": "cbk-space.localhost",
+    "SPACE_S3_BUCKET_NAME": "space",
+    "STORAGE_ACCESS_KEY_ID": "",
+    "STORAGE_ENDPOINT": "http://cbk-storage.localhost:3900",
+    "STORAGE_FORCE_PATH_STYLE": "true",
+    "STORAGE_REGION": "garage",
+    "STORAGE_SECRET_ACCESS_KEY": "",
+    "TEMP_S3_BUCKET_NAME": "temp",
+    "VERCEL_MODELS_API_KEY": "",
+    "VIDEO_S3_BUCKET_NAME": "video"
+  },
+  "qdrant": {},
+  "redis": {}
+}
+

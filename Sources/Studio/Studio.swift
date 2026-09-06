@@ -290,11 +290,12 @@ private final class LocalTCPForwarder: @unchecked Sendable {
     private var listener: NWListener?
     private var relays: [UUID: TCPRelay] = [:]
 
-    func start(preferredPort: UInt16, targetUnixSocketPath: String) async throws -> UInt16 {
+    func start(preferredPort: UInt16, targetUnixSocketPath: String, allowFallback: Bool = true, excluding: Set<UInt16> = []) async throws -> UInt16 {
         stop()
         var lastError: Error?
-        let lastPort = UInt16(min(Int(preferredPort) + 9, Int(UInt16.max)))
+        let lastPort = UInt16(min(Int(preferredPort) + (allowFallback ? 9 : 0), Int(UInt16.max)))
         for port in preferredPort...lastPort {
+            if excluding.contains(port) { continue }
             try Task.checkCancellation()
             do {
                 try await startOne(port: port, targetUnixSocketPath: targetUnixSocketPath)
@@ -453,7 +454,7 @@ struct ContainerLogEntry: Identifiable, Sendable, Equatable {
 private struct ServicePlan: Sendable {
     let name: String
     let image: String
-    let environment: [String: String]
+    let environment: ComposeEnvironment
     let command: [String]?
     let mounts: [(name: String, destination: String)]
     let fileMount: (source: String, destination: String)?
@@ -464,6 +465,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
     private static let bootstrapAddress = "192.0.2.2"
     private var pod: LinuxPod?
     private var forwarder: LocalTCPForwarder?
+    private var auxiliaryForwarders: [LocalTCPForwarder] = []
     private var bridgeProcess: LinuxProcess?
     private var outputs: [String: MemoryWriter] = [:]
     private var startedServices: Set<String> = []
@@ -513,7 +515,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
         let hostSocket = FileManager.default.temporaryDirectory.appendingPathComponent("private-oci-http.sock")
         try? FileManager.default.removeItem(at: hostSocket)
         let localForwarder = LocalTCPForwarder()
-        let hostPort = try await localForwarder.start(preferredPort: 3000, targetUnixSocketPath: hostSocket.path)
+        let hostPort = try await localForwarder.start(preferredPort: 3000, targetUnixSocketPath: hostSocket.path, excluding: [3001])
         forwarder = localForwarder
         if hostPort == 3000 {
             await event(.log("Reserved http://localhost:3000"))
@@ -523,7 +525,18 @@ actor PrivateOCIStackRuntime: StackRuntime {
 
         let garageFile = dataRoot.appendingPathComponent("garage.toml")
         try Data(bundle.garageConfiguration.utf8).write(to: garageFile, options: .atomic)
-        let plans = makePlans(bundle: bundle, hostPort: hostPort, garageFile: garageFile)
+        let plans = try makePlans(bundle: bundle, hostPort: hostPort, garageFile: garageFile)
+        let platformEnvironment = plans.first { $0.name == "platform" }!.environment.values
+        var bridgePorts: [UInt16] = [3000]
+        if platformEnvironment["RELAY_URL"] != nil { bridgePorts.append(3001) }
+        if platformEnvironment["STORAGE_ENDPOINT"] != nil { bridgePorts.append(3900) }
+        for port in bridgePorts.dropFirst() {
+            let auxiliary = LocalTCPForwarder()
+            _ = try await auxiliary.start(preferredPort: port, targetUnixSocketPath: hostSocket.path + ".\(port)", allowFallback: false)
+            auxiliaryForwarders.append(auxiliary)
+            await event(.log("Reserved loopback service port \(port)"))
+        }
+        await event(.log("Applied Compose environment for all services (trusted local sign-in: \(platformEnvironment["NEXTAUTH_TRUSTED_SIGNIN"] == "true" ? "enabled" : "not enabled"))"))
         for plan in plans { await event(.service(plan.name, .preparing)) }
 
         await event(.phase(.pulling))
@@ -555,7 +568,10 @@ actor PrivateOCIStackRuntime: StackRuntime {
             )
             let imageDocument = try await image.config(for: .current)
             var process = LinuxProcessConfiguration(from: imageDocument.config ?? ImageConfig())
-            process.environmentVariables = mergedEnvironment(process.environmentVariables, overrides: plan.environment)
+            if !process.environmentVariables.contains(where: { $0.hasPrefix("PATH=") }) {
+                process.environmentVariables.append("PATH=" + LinuxProcessConfiguration.defaultPath)
+            }
+            process.environmentVariables = plan.environment.merging(imageEnvironment: process.environmentVariables)
             if let command = plan.command {
                 process.arguments = (imageDocument.config?.entrypoint ?? []) + command
             }
@@ -602,7 +618,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
             // workloads run. No gateway or resolver is guessed here.
             configuration.dns = DNS(nameservers: [])
             var entries = Hosts.default.entries
-            entries.append(.init(ipAddress: "127.0.0.1", hostnames: serviceNames))
+            entries.append(.init(ipAddress: "127.0.0.1", hostnames: serviceNames + ["cbk.localhost", "cbk-storage.localhost", "cbk-relay.localhost", "cbk-apps.localhost", "cbk-labs.localhost"]))
             configuration.hosts = Hosts(entries: entries)
             configuration.volumes = podVolumes
         }
@@ -684,10 +700,10 @@ actor PrivateOCIStackRuntime: StackRuntime {
                 attempts: 180
             )
             await event(.progress(0.985, "Publishing the private platform"))
-            try await installHTTPBridge(in: pod, hostSocket: hostSocket, event: event)
+            try await installHTTPBridge(in: pod, hostSocket: hostSocket, ports: bridgePorts, event: event)
             await event(.log("VM socket relay is serving localhost:\(hostPort)"))
 
-            await event(.progress(1, "Opening ChatBotKit Community"))
+            await event(.progress(1, "Opening ChatBotKit Studio"))
             try Task.checkCancellation()
             try JSONEncoder().encode(protectedImages.sorted()).write(to: dataRoot.appendingPathComponent("protected-images.json"), options: .atomic)
             return StackInfo(
@@ -710,6 +726,8 @@ actor PrivateOCIStackRuntime: StackRuntime {
     func stop() async throws -> [String] {
         forwarder?.stop()
         forwarder = nil
+        for auxiliary in auxiliaryForwarders { auxiliary.stop() }
+        auxiliaryForwarders.removeAll()
         var warnings: [String] = []
         if let pod {
             warnings = try await GracefulShutdown.run(
@@ -854,19 +872,23 @@ actor PrivateOCIStackRuntime: StackRuntime {
     private func installHTTPBridge(
         in pod: LinuxPod,
         hostSocket: URL,
+        ports: [UInt16],
         event: @escaping @MainActor @Sendable (RuntimeEvent) -> Void
     ) async throws {
         let script = """
         const fs=require('fs'),net=require('net');
-        const path='/tmp/private-oci-http.sock';
+        for(const port of \(ports)) {
+        const path='/tmp/private-oci-http.sock'+(port===3000?'':'.'+port);
         try{fs.unlinkSync(path)}catch{}
         const server=net.createServer(client=>{
-          const upstream=net.connect(3000,'127.0.0.1');
+          const upstream=net.connect(port,'127.0.0.1');
           client.pipe(upstream);upstream.pipe(client);
           const close=()=>{client.destroy();upstream.destroy()};
           client.on('error',close);upstream.on('error',close);
         });
-        server.listen(path);setInterval(()=>{},2147483647);
+        server.listen(path);
+        }
+        setInterval(()=>{},2147483647);
         """
         let output = MemoryWriter { lines in
             Task { @MainActor in event(.containerLines("bridge", lines)) }
@@ -883,7 +905,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
         for attempt in 0..<40 {
             try Task.checkCancellation()
             let check = try await pod.execInContainer("platform", processID: "bridge-check-\(attempt)") { configuration in
-                configuration.arguments = ["node", "-e", "const n=require('net').connect('/tmp/private-oci-http.sock');n.on('connect',()=>process.exit(0));n.on('error',()=>process.exit(1));"]
+                configuration.arguments = ["node", "-e", "const fs=require('fs');process.exit(\(ports).every(p=>fs.existsSync('/tmp/private-oci-http.sock'+(p===3000?'':'.'+p)))?0:1)"]
             }
             let status = try await runProbe(check, timeout: 2)
             if status.exitCode == 0 { socketReady = true; break }
@@ -892,14 +914,20 @@ actor PrivateOCIStackRuntime: StackRuntime {
         guard socketReady else {
             throw AppRuntimeError("The private HTTP bridge did not start: \(output.text())")
         }
-        try await pod.relayUnixSocket(
-            "platform",
-            socket: UnixSocketConfiguration(
-                source: URL(filePath: "/tmp/private-oci-http.sock"),
-                destination: hostSocket,
-                direction: .outOf
+        for port in ports {
+            let suffix = port == 3000 ? "" : ".\(port)"
+            let destination = URL(filePath: hostSocket.path + suffix)
+            // These sockets belong to this runtime, protected by its storage lease.
+            if port != 3000 { try? FileManager.default.removeItem(at: destination) }
+            try await pod.relayUnixSocket(
+                "platform",
+                socket: UnixSocketConfiguration(
+                    source: URL(filePath: "/tmp/private-oci-http.sock" + suffix),
+                    destination: destination,
+                    direction: .outOf
+                )
             )
-        )
+        }
     }
 
     private func runProbe(_ process: LinuxProcess, timeout: Int64) async throws -> ExitStatus {
@@ -916,26 +944,11 @@ actor PrivateOCIStackRuntime: StackRuntime {
         }
     }
 
-    private func makePlans(bundle: OCIStackBundle, hostPort: UInt16, garageFile: URL) -> [ServicePlan] {
-        let empty = [
-            "NEXTAUTH_SECRET", "QUEUE_SECRET", "JWT_TOKEN_SECRET_KEY", "PRISMA_FIELD_ENCRYPTION_KEY",
-            "OPENAI_API_KEY", "OPENROUTER_MODELS_API_KEY", "VERCEL_MODELS_API_KEY",
-            "SERVICE_AWS_ACCESS_KEY_ID", "SERVICE_AWS_SECRET_ACCESS_KEY"
-        ]
-        var platformEnvironment: [String: String] = [
-            "NODE_ENV": "production", "PORT": "3000",
-            "SITE_URL": "http://localhost:\(hostPort)", "NEXTAUTH_URL": "http://localhost:\(hostPort)",
-            "SPACE_APEX": "space.localhost", "PORTAL_APEX": "portal.localhost",
-            "PRISMA_DATABASE_URL": "file:/data/chatbotkit.db",
-            "REDIS_URL": "redis://redis:6379", "QDRANT_URL": "http://qdrant:6333",
-            "SERVICE_AWS_ENDPOINT": "http://garage:3900", "SERVICE_AWS_REGION": "garage",
-            "SERVICE_AWS_FORCE_PATH_STYLE": "true",
-            "FILE_S3_BUCKET_NAME": "file", "IMAGE_S3_BUCKET_NAME": "image", "VIDEO_S3_BUCKET_NAME": "video",
-            "AUDIO_S3_BUCKET_NAME": "audio", "CONVERSATION_S3_BUCKET_NAME": "conversation",
-            "NAMESPACE_S3_BUCKET_NAME": "namespace", "SESSION_S3_BUCKET_NAME": "session",
-            "SPACE_S3_BUCKET_NAME": "space", "TEMP_S3_BUCKET_NAME": "temp", "OUTPUT_S3_BUCKET_NAME": "output"
-        ]
-        for key in empty { platformEnvironment[key] = "" }
+    private func makePlans(bundle: OCIStackBundle, hostPort: UInt16, garageFile: URL) throws -> [ServicePlan] {
+        let environments = try PrivateStackEnvironment.load(bundle.composeYAML, hostPort: hostPort)
+        for name in serviceNames where environments[name] == nil {
+            throw AppRuntimeError("Missing Compose service environment: \(name)")
+        }
         let networkBootstrap = """
         set -eu
         ip address flush dev eth0
@@ -951,34 +964,14 @@ actor PrivateOCIStackRuntime: StackRuntime {
         echo "DNS preflight passed: binaries.prisma.sh"
         """
         return [
-            .init(name: "network-init", image: bundle.images["redis"]!, environment: [:], command: ["sh", "-c", networkBootstrap], mounts: [("platform-data", "/data")], fileMount: nil),
-            .init(name: "db-init", image: bundle.images["db-init"]!, environment: ["PRISMA_DATABASE_URL": "file:/data/chatbotkit.db"], command: nil, mounts: [("platform-data", "/data")], fileMount: nil),
-            .init(name: "redis", image: bundle.images["redis"]!, environment: [:], command: ["redis-server", "--appendonly", "yes"], mounts: [("redis-data", "/data")], fileMount: nil),
-            .init(name: "qdrant", image: bundle.images["qdrant"]!, environment: [:], command: nil, mounts: [("qdrant-data", "/qdrant/storage")], fileMount: nil),
-            .init(name: "garage", image: bundle.images["garage"]!, environment: [:], command: nil, mounts: [("garage-data", "/var/lib/garage")], fileMount: (garageFile.path, "/etc/garage.toml")),
-            .init(name: "garage-init", image: bundle.images["garage-init"]!, environment: ["GARAGE_ADMIN_URL": "http://garage:3903", "GARAGE_ADMIN_TOKEN": "dev-admin-token", "STORAGE_ACCESS_KEY_ID": "", "STORAGE_SECRET_ACCESS_KEY": ""], command: ["node", "/garage-init.mjs"], mounts: [("platform-data", "/data")], fileMount: nil),
-            .init(name: "platform", image: bundle.images["platform"]!, environment: platformEnvironment, command: nil, mounts: [("platform-data", "/data")], fileMount: nil)
+            .init(name: "network-init", image: bundle.images["redis"]!, environment: ComposeEnvironment(), command: ["sh", "-c", networkBootstrap], mounts: [("platform-data", "/data")], fileMount: nil),
+            .init(name: "db-init", image: bundle.images["db-init"]!, environment: environments["db-init"]!, command: nil, mounts: [("platform-data", "/data")], fileMount: nil),
+            .init(name: "redis", image: bundle.images["redis"]!, environment: environments["redis"]!, command: ["redis-server", "--appendonly", "yes"], mounts: [("redis-data", "/data")], fileMount: nil),
+            .init(name: "qdrant", image: bundle.images["qdrant"]!, environment: environments["qdrant"]!, command: nil, mounts: [("qdrant-data", "/qdrant/storage")], fileMount: nil),
+            .init(name: "garage", image: bundle.images["garage"]!, environment: environments["garage"]!, command: nil, mounts: [("garage-data", "/var/lib/garage")], fileMount: (garageFile.path, "/etc/garage.toml")),
+            .init(name: "garage-init", image: bundle.images["garage-init"]!, environment: environments["garage-init"]!, command: ["node", "/garage-init.mjs"], mounts: [("platform-data", "/data")], fileMount: nil),
+            .init(name: "platform", image: bundle.images["platform"]!, environment: environments["platform"]!, command: nil, mounts: [("platform-data", "/data")], fileMount: nil)
         ]
-    }
-
-    private func mergedEnvironment(_ base: [String], overrides: [String: String]) -> [String] {
-        var values: [String: String] = [:]
-        var order: [String] = []
-        for item in base {
-            let pieces = item.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            guard let key = pieces.first.map(String.init) else { continue }
-            if values[key] == nil { order.append(key) }
-            values[key] = pieces.count == 2 ? String(pieces[1]) : ""
-        }
-        for (key, value) in overrides {
-            if values[key] == nil { order.append(key) }
-            values[key] = value
-        }
-        if values["PATH"] == nil {
-            order.insert("PATH", at: 0)
-            values["PATH"] = LinuxProcessConfiguration.defaultPath
-        }
-        return order.compactMap { key in values[key].map { "\(key)=\($0)" } }
     }
 
     private func short(_ value: String) -> String {

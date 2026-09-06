@@ -59,6 +59,7 @@ if [[ -d "$sparkle" ]]; then rm -r "$sparkle"; fi
 ditto "$sparkle_source" "$sparkle"
 rm -r "$sparkle/Versions/B/XPCServices/Downloader.xpc"
 cp -f "$build_root/checkouts/Sparkle/LICENSE" "$app/Contents/Resources/Notices/Sparkle-LICENSE.txt"
+cp -f "$build_root/checkouts/Yams/LICENSE" "$app/Contents/Resources/Notices/Yams-LICENSE.txt"
 cp "$repo_root/Packaging/Info.plist" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$app/Contents/Info.plist"

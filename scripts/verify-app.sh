@@ -30,6 +30,7 @@ done < <(otool -L "$binary" | awk '/^\t/ {print $1}')
 [[ "$(lipo -archs "$binary")" == arm64 ]] || { echo 'Expected an arm64 executable.' >&2; exit 1; }
 test -s "$app/Contents/Resources/Runtime/vmlinux-arm64"
 test -s "$app/Contents/Resources/Studio.icns"
+test -s "$app/Contents/Resources/Notices/Yams-LICENSE.txt"
 plutil -lint "$app/Contents/Info.plist"
 bash "$(dirname "${BASH_SOURCE[0]}")/verify-updater.sh" "$app"
 echo 'Verified: hardened runtime, five-key approved sandbox policy, arm64, system/bundled-Sparkle linkage.'
