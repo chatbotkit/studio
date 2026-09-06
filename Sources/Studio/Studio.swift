@@ -1138,6 +1138,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var modelCredentialsBusy = false
     private var storageTask: Task<Void, Never>?
     private var modelCredentialsTask: Task<Void, Never>?
+    private var modelCredentialsNoticeTask: Task<Void, Never>?
     private let runtime: any StackRuntime
     private let resources: @MainActor () throws -> (kernel: URL, data: URL)
     private var task: Task<Void, Never>?
@@ -1254,6 +1255,9 @@ final class AppModel: ObservableObject {
     }
 
     func inspectModelCredentials() {
+        modelCredentialsNoticeTask?.cancel()
+        modelCredentialsNoticeTask = nil
+        modelCredentialsNotice = nil
         guard info != nil, !phase.busy, !isShuttingDown, !storageBusy, !modelCredentialsBusy else { return }
         modelCredentialsBusy = true
         modelCredentialsError = nil
@@ -1271,6 +1275,8 @@ final class AppModel: ObservableObject {
 
     func updateModelCredentials(_ changes: [ModelCredentialChange]) {
         guard info != nil, !phase.busy, !isShuttingDown, !storageBusy, !modelCredentialsBusy else { return }
+        modelCredentialsNoticeTask?.cancel()
+        modelCredentialsNoticeTask = nil
         modelCredentialsBusy = true
         modelCredentialsError = nil
         modelCredentialsNotice = nil
@@ -1278,7 +1284,14 @@ final class AppModel: ObservableObject {
             defer { modelCredentialsBusy = false; modelCredentialsTask = nil }
             do {
                 configuredModelCredentialKeys = try await runtime.updateModelCredentials(changes)
-                modelCredentialsNotice = "Saved. The platform is reloading its model providers."
+                let notice = "Saved. The platform is reloading its model providers."
+                modelCredentialsNotice = notice
+                modelCredentialsNoticeTask = Task { @MainActor [weak self] in
+                    do { try await Task.sleep(for: .seconds(4)) } catch { return }
+                    guard self?.modelCredentialsNotice == notice else { return }
+                    self?.modelCredentialsNotice = nil
+                    self?.modelCredentialsNoticeTask = nil
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -1298,6 +1311,9 @@ final class AppModel: ObservableObject {
         inspection?.cancel()
         let credentials = modelCredentialsTask
         credentials?.cancel()
+        modelCredentialsNoticeTask?.cancel()
+        modelCredentialsNoticeTask = nil
+        modelCredentialsNotice = nil
         let operation = Task { @MainActor in
             // Await cancellation/cleanup before touching the runtime again.
             await previous?.value

@@ -159,6 +159,7 @@ struct ModelProvidersSettingsView: View {
     @State private var drafts: [String: String] = [:]
     @State private var validationError: String?
     @State private var confirmingRemoval = false
+    @FocusState private var focusedFieldKey: String?
 
     private var provider: ModelProvider {
         ModelCredentialCatalog.providers.first { $0.id == selectedProviderID }
@@ -173,14 +174,59 @@ struct ModelProvidersSettingsView: View {
         provider.fields.contains { !(drafts[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
+    private var configuredProviderCount: Int {
+        ModelCredentialCatalog.providers.count { provider in
+            provider.isConfigured(in: model.configuredModelCredentialKeys)
+        }
+    }
+
     var body: some View {
+        providerForm
+        .frame(width: StudioSettingsLayout.width)
+        .fixedSize(horizontal: false, vertical: true)
+        .task(id: model.info?.podID) { model.inspectModelCredentials() }
+        .onChange(of: selectedProviderID) { _, _ in
+            drafts.removeAll(keepingCapacity: true)
+            validationError = nil
+        }
+        .confirmationDialog("Remove the saved credentials for \(provider.name)?", isPresented: $confirmingRemoval) {
+            Button("Remove Credentials", role: .destructive) {
+                drafts.removeAll(keepingCapacity: true)
+                validationError = nil
+                model.updateModelCredentials(ModelCredentialCatalog.removals(for: provider))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Models from this provider will no longer be available after the platform reloads.")
+        }
+    }
+
+    private var providerForm: some View {
         Form {
             Section {
-                Picker("Provider", selection: $selectedProviderID) {
-                    ForEach(ModelCredentialCatalog.providers) { provider in
-                        Text(provider.name).tag(provider.id)
+                HStack {
+                    Text("\(configuredProviderCount) of \(ModelCredentialCatalog.providers.count) configured")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if model.modelCredentialsBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing model provider credentials")
                     }
                 }
+
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8)
+                ], spacing: 8) {
+                    ForEach(ModelCredentialCatalog.providers) { candidate in
+                        providerButton(candidate)
+                    }
+                }
+            } header: {
+                Text("Providers")
+            } footer: {
+                Text("Choose a provider to add, replace, or remove its credentials.")
             }
 
             Section {
@@ -195,12 +241,25 @@ struct ModelProvidersSettingsView: View {
                 ForEach(provider.fields) { field in
                     LabeledContent(field.label) {
                         if field.secret {
-                            SecureField(isConfigured ? "Enter a replacement" : field.prompt, text: draftBinding(for: field.key))
-                                .textContentType(.password)
+                            SecureField("", text: draftBinding(for: field.key))
+                                .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.leading)
+                                .focused($focusedFieldKey, equals: field.key)
+                                .frame(minWidth: 280)
+                                .accessibilityLabel(field.label)
+                                .help(field.prompt)
                         } else {
-                            TextField(isConfigured ? "Enter a replacement" : field.prompt, text: draftBinding(for: field.key))
+                            TextField("", text: draftBinding(for: field.key))
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.leading)
+                            .focused($focusedFieldKey, equals: field.key)
+                            .frame(minWidth: 280)
+                            .accessibilityLabel(field.label)
+                            .help(field.prompt)
                         }
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { focusedFieldKey = field.key }
                 }
             } header: {
                 Text(provider.name)
@@ -250,23 +309,38 @@ struct ModelProvidersSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 620)
+        .frame(width: StudioSettingsLayout.width)
         .fixedSize(horizontal: false, vertical: true)
-        .task(id: model.info?.podID) { model.inspectModelCredentials() }
-        .onChange(of: selectedProviderID) { _, _ in
-            drafts.removeAll(keepingCapacity: true)
-            validationError = nil
-        }
-        .confirmationDialog("Remove the saved credentials for \(provider.name)?", isPresented: $confirmingRemoval) {
-            Button("Remove Credentials", role: .destructive) {
-                drafts.removeAll(keepingCapacity: true)
-                validationError = nil
-                model.updateModelCredentials(ModelCredentialCatalog.removals(for: provider))
+    }
+
+    private func providerButton(_ candidate: ModelProvider) -> some View {
+        let configured = candidate.isConfigured(in: model.configuredModelCredentialKeys)
+        let selected = candidate.id == selectedProviderID
+        return Button {
+            selectedProviderID = candidate.id
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: configured ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(configured ? .green : .secondary)
+                Text(candidate.name)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Models from this provider will no longer be available after the platform reloads.")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .background(
+                selected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 7)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(selected ? Color.accentColor.opacity(0.45) : Color.clear)
+            }
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(candidate.name), \(configured ? "configured" : "not configured")")
     }
 
     private func draftBinding(for key: String) -> Binding<String> {

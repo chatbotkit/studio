@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum StudioSettingsLayout {
+    static let width: CGFloat = 580
+}
+
 enum StudioSettingsTab: Hashable {
     case models
     case storage
@@ -30,6 +34,7 @@ struct StudioSettingsView: View {
                 }
                 .tag(StudioSettingsTab.updates)
         }
+        .frame(width: StudioSettingsLayout.width)
         .windowResizeAnchor(.top)
     }
 }
