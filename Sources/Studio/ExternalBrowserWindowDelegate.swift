@@ -15,7 +15,7 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
-        confirmations.request(.init(kind: .javascript, origin: Self.origin(frame.request.url), message: message), in: webView.window) { completionHandler($0) }
+        confirmations.request(.init(kind: .javascript, message: message), in: webView.window) { completionHandler($0) }
     }
 
     // macOS WebKit still exposes beforeunload only through this UIDelegate SPI.
@@ -24,16 +24,7 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
     // Source: WebKit/Source/WebKit/UIProcess/API/Cocoa/WKUIDelegatePrivate.h
     @objc(_webView:runBeforeUnloadConfirmPanelWithMessage:initiatedByFrame:completionHandler:)
     func runBeforeUnload(_ webView: WKWebView, message: String, frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        confirmations.request(.init(kind: .leavePage, origin: Self.origin(frame.request.url), message: ""), in: webView.window, reply: completionHandler)
-    }
-
-    static func origin(_ url: URL?) -> String {
-        guard let url, let host = url.host, let scheme = url.scheme, ["http", "https"].contains(scheme) else { return "the embedded page" }
-        var origin = URLComponents()
-        origin.scheme = scheme
-        origin.host = host
-        origin.port = url.port
-        return origin.string ?? host
+        confirmations.request(.init(kind: .leavePage, message: ""), in: webView.window, reply: completionHandler)
     }
 
     func webView(

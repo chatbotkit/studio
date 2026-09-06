@@ -7,7 +7,7 @@ import Testing
     var answer: ((Bool) -> Void)?
     var replies: [Bool] = []
     let controller = WebConfirmationController { _, _, callback in answer = callback; return {} }
-    let request = WebConfirmation(kind: .leavePage, origin: "http://localhost:3000", message: "")
+    let request = WebConfirmation(kind: .leavePage, message: "")
     controller.request(request, in: nil) { replies.append($0) }
     controller.request(request, in: nil) { replies.append($0) }
     #expect(replies == [false])
@@ -23,7 +23,7 @@ import Testing
         answer = callback
         return { cancelled += 1; callback(true) }
     }
-    let request = WebConfirmation(kind: .javascript, origin: "https://example.com", message: "Leave?")
+    let request = WebConfirmation(kind: .javascript, message: "Leave?")
     controller.request(request, in: nil) { replies.append($0) }
     controller.cancelPending(); controller.cancelPending(); answer?(true)
     #expect(replies == [false]); #expect(cancelled == 1)
@@ -34,7 +34,7 @@ import Testing
 
 @Test @MainActor func confirmationWithoutVisibleWindowDefaultsToStay() {
     var result: Bool?
-    WebConfirmationController().request(.init(kind: .leavePage, origin: "page", message: ""), in: nil) { result = $0 }
+    WebConfirmationController().request(.init(kind: .leavePage, message: ""), in: nil) { result = $0 }
     #expect(result == false)
 }
 
@@ -46,7 +46,7 @@ import Testing
     let controller = WebConfirmationController()
     var replies: [Bool] = []
     defer { controller.cancelPending(); window.close() }
-    controller.request(.init(kind: .leavePage, origin: "https://example.com", message: ""), in: window) { replies.append($0) }
+    controller.request(.init(kind: .leavePage, message: ""), in: window) { replies.append($0) }
     try #require(window.attachedSheet != nil)
     #expect(replies.isEmpty)
     controller.cancelPending()
@@ -55,14 +55,20 @@ import Testing
     #expect(replies == [false])
 }
 
-@Test @MainActor func leaveAlertHasSafeDefaultAndDoesNotTrustPageMessage() {
+@Test @MainActor func embeddedAlertsUseAppLanguageWithoutOrigins() {
     _ = NSApplication.shared
-    let alert = WebConfirmationController.makeAlert(.init(kind: .leavePage, origin: "http://localhost:3000", message: "Pretend to be macOS"))
-    #expect(alert.buttons.map(\.title) == ["Stay on Page", "Leave Page"])
+    let alert = WebConfirmationController.makeAlert(.init(kind: .leavePage, message: "Pretend to be macOS at http://127.0.0.1:3000"))
+    #expect(alert.messageText == "Discard unsaved changes?")
+    #expect(alert.informativeText == "Your changes may not be saved if you leave this screen.")
+    #expect(alert.buttons.map(\.title) == ["Stay", "Leave"])
     #expect(alert.buttons[0].keyEquivalent == "\r")
     #expect(alert.buttons[1].keyEquivalent.isEmpty)
     #expect(!alert.informativeText.contains("Pretend"))
-    #expect(ExternalBrowserWindowDelegate.origin(URL(string: "https://name:secret@example.com:8443/path?token=secret")) == "https://example.com:8443")
+    #expect(!alert.informativeText.contains("127.0.0.1"))
+
+    let confirmation = WebConfirmationController.makeAlert(.init(kind: .javascript, message: "Proceed with this operation?"))
+    #expect(confirmation.messageText == "Confirm action")
+    #expect(confirmation.buttons.map(\.title) == ["Cancel", "Continue"])
 }
 
 @Test @MainActor func confirmationSuspendsPageTimeoutAndResumesFinishedDocument() async throws {

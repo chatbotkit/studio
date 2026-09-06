@@ -3,7 +3,6 @@ import AppKit
 struct WebConfirmation {
     enum Kind { case leavePage, javascript }
     let kind: Kind
-    let origin: String
     let message: String
 }
 
@@ -48,15 +47,15 @@ final class WebConfirmationController {
         alert.alertStyle = .warning
         switch request.kind {
         case .leavePage:
-            alert.messageText = "Leave this page?"
-            alert.informativeText = "Changes you made on \(request.origin) may not be saved."
-            alert.addButton(withTitle: "Stay on Page")
-            alert.addButton(withTitle: "Leave Page")
+            alert.messageText = "Discard unsaved changes?"
+            alert.informativeText = "Your changes may not be saved if you leave this screen."
+            alert.addButton(withTitle: "Stay")
+            alert.addButton(withTitle: "Leave")
         case .javascript:
-            alert.messageText = "Message from \(request.origin)"
+            alert.messageText = "Confirm action"
             alert.informativeText = String(request.message.prefix(2_000))
             alert.addButton(withTitle: "Cancel")
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Continue")
         }
         // Return chooses the non-destructive answer; the sheet handles Escape
         // explicitly rather than relying on AppKit's button-title heuristics.
