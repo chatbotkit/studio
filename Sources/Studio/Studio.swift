@@ -2368,6 +2368,14 @@ struct StackCommands: Commands {
     @Environment(\.openSettings) private var openSettings
     @Binding var selectedSettingsTab: StudioSettingsTab
     var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Window") {
+                guard let url = model.info?.url else { return }
+                openWindow(value: StudioPageWindow(url: url))
+            }
+            .keyboardShortcut("n", modifiers: .command)
+            .disabled(model.info == nil)
+        }
         CommandMenu("Stack") {
             Button("Restart Stack") { model.restart() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(model.phase.busy)
             Button("Open in Browser") { model.openInBrowser() }.disabled(model.info == nil)
@@ -2489,7 +2497,6 @@ struct StudioApp: App {
             .windowResizability(.contentMinSize)
             .commands { StackCommands(model: model, selectedSettingsTab: $selectedSettingsTab) }
             .commands {
-                CommandGroup(replacing: .newItem) {}
                 CommandGroup(after: .appInfo) { CheckForUpdatesButton() }
             }
         WindowGroup("Studio", for: StudioPageWindow.self) { $destination in
