@@ -76,29 +76,3 @@ struct StudioLaunchSurface: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-
-struct AboutStudioView: View {
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-    }
-    var body: some View {
-        VStack(spacing: 24) {
-            CBKLogo().frame(width: 72, height: 72)
-            VStack(spacing: 8) {
-                Text("Studio").font(.system(size: 30, weight: .semibold))
-                Text("Version \(version)").font(.caption).foregroundStyle(.secondary)
-            }
-            Text("Your ChatBotKit workspace.\nRunning locally on your Mac.")
-                .font(.system(size: 13)).multilineTextAlignment(.center).foregroundStyle(.secondary)
-            Divider().frame(width: 240)
-            CBKLogo(wordmark: true).frame(width: 88, height: 29)
-            HStack(spacing: 22) {
-                Link("ChatBotKit", destination: URL(string: "https://chatbotkit.com")!)
-                Link("Source", destination: URL(string: "https://github.com/chatbotkit/studio")!)
-            }.font(.caption).tint(Color(nsColor: StudioBrand.foreground))
-        }
-        .padding(44)
-        .frame(width: 360)
-        .background(Color(nsColor: StudioBrand.background))
-    }
-}

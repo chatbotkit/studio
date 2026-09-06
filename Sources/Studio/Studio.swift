@@ -2257,9 +2257,6 @@ struct StackCommands: Commands {
     @Environment(\.openSettings) private var openSettings
     @Binding var selectedSettingsTab: StudioSettingsTab
     var body: some Commands {
-        CommandGroup(replacing: .appInfo) {
-            Button("About Studio") { openWindow(id: "about-studio") }
-        }
         CommandMenu("Stack") {
             Button("Restart Stack") { model.restart() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(model.phase.busy)
             Button("Open in Browser") { model.openInBrowser() }.disabled(model.info == nil)
@@ -2395,8 +2392,5 @@ struct StudioApp: App {
             LiveLogsView(model: model).tint(Color(nsColor: StudioBrand.foreground))
         }
             .defaultSize(width: 1080, height: 680)
-        Window("About Studio", id: "about-studio") { AboutStudioView() }
-            .windowResizability(.contentSize)
-            .defaultPosition(.center)
     }
 }
