@@ -1745,7 +1745,7 @@ struct FailureView: View {
 struct ContentView: View {
     @ObservedObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
-    @SwiftUI.State private var pageIsReady = false
+    @SwiftUI.State private var pageReveal = WebPageRevealState()
     @SwiftUI.State private var pageError: String?
     @SwiftUI.State private var pageThemeColor = NSColor.windowBackgroundColor
     @SwiftUI.State private var pageBackgroundColor = NSColor.windowBackgroundColor
@@ -1755,9 +1755,9 @@ struct ContentView: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            PageEdgeTitlebar(pageIsReady: pageIsReady, themeColor: pageThemeColor)
+            PageEdgeTitlebar(pageIsReady: pageReveal.hasRevealedPage, themeColor: pageThemeColor)
             ZStack {
-                Color(nsColor: pageIsReady ? pageBackgroundColor : StudioBrand.background)
+                Color(nsColor: pageReveal.hasRevealedPage ? pageBackgroundColor : StudioBrand.background)
                 if let info = model.info {
                     EmbeddedWebView(
                         url: info.url,
@@ -1768,23 +1768,28 @@ struct ContentView: View {
                         },
                         onReady: {
                             pageError = nil
-                            withAnimation(.easeOut(duration: 0.55)) { pageIsReady = true }
+                            pageReveal.documentBecameReady()
                         },
-                        onLoading: { pageError = nil; pageIsReady = false },
-                        onFailure: { pageError = $0; pageIsReady = false }
+                        onLoading: {
+                            pageError = nil
+                            pageReveal.documentStartedLoading()
+                        },
+                        onFailure: { pageError = $0 }
                     )
+                    .opacity(pageReveal.hasRevealedPage ? 1 : 0)
+                    .animation(.easeOut(duration: 0.7), value: pageReveal.hasRevealedPage)
                 }
-                if !pageIsReady {
-                    if let pageError, model.info != nil {
-                        VStack(spacing: 16) {
-                            Label("The page couldn’t load", systemImage: "exclamationmark.circle").font(.title2)
-                            Text(pageError).multilineTextAlignment(.center).foregroundStyle(.secondary)
-                            Button("Reload Page") { EmbeddedWebInspector.shared.reload() }
-                            Text("The container stack has not been restarted.").font(.caption).foregroundStyle(.secondary)
-                        }.padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color(nsColor: StudioBrand.background))
-                    } else if case let .failed(message) = model.phase { FailureView(message: message).transition(.opacity) }
-                    else { StartupView(model: model).transition(.opacity) }
+                if let pageError, model.info != nil {
+                    VStack(spacing: 16) {
+                        Label("The page couldn’t load", systemImage: "exclamationmark.circle").font(.title2)
+                        Text(pageError).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                        Button("Reload Page") { EmbeddedWebInspector.shared.reload() }
+                        Text("The container stack has not been restarted.").font(.caption).foregroundStyle(.secondary)
+                    }.padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: StudioBrand.background))
+                } else if !pageReveal.hasRevealedPage {
+                    if case let .failed(message) = model.phase { FailureView(message: message) }
+                    else { StartupView(model: model) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1793,10 +1798,13 @@ struct ContentView: View {
         .ignoresSafeArea(edges: .top)
         .frame(minWidth: 980, minHeight: 680)
         .background(WindowChromeInstaller(
-            pageIsReady: pageIsReady,
+            pageIsReady: pageReveal.hasRevealedPage,
             pageBackgroundColor: pageBackgroundColor
         ))
-        .onChange(of: model.info?.podID) { _, _ in pageIsReady = false; pageError = nil }
+        .onChange(of: model.info?.podID) { _, _ in
+            pageReveal.stackWasReplaced()
+            pageError = nil
+        }
         .task { if !RuntimeSmokeTest.requested { model.start() } }
     }
 }

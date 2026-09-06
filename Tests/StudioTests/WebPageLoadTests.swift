@@ -3,6 +3,20 @@ import WebKit
 import Testing
 @testable import Studio
 
+@Test func startupSurfaceIsRetiredUntilTheStackIsReplaced() {
+    var reveal = WebPageRevealState()
+    #expect(!reveal.hasRevealedPage)
+
+    reveal.documentBecameReady()
+    #expect(reveal.hasRevealedPage)
+
+    reveal.documentStartedLoading()
+    #expect(reveal.hasRevealedPage)
+
+    reveal.stackWasReplaced()
+    #expect(!reveal.hasRevealedPage)
+}
+
 @Test @MainActor func pageTimeoutBecomesRetryableFailure() async throws {
     let load = WebPageLoad(deadline: .milliseconds(20)) { _ in }
     load.begin()

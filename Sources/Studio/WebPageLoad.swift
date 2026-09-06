@@ -2,6 +2,23 @@ import Foundation
 
 enum WebPageState: Equatable { case loading, ready, failed(String) }
 
+struct WebPageRevealState: Equatable {
+    private(set) var hasRevealedPage = false
+
+    mutating func documentBecameReady() {
+        hasRevealedPage = true
+    }
+
+    mutating func documentStartedLoading() {
+        // The initial launch surface is a one-shot cover. Once the embedded
+        // page has appeared, navigation and reload keep WebKit visible.
+    }
+
+    mutating func stackWasReplaced() {
+        hasRevealedPage = false
+    }
+}
+
 @MainActor
 final class WebPageLoad {
     private var generation = UUID()

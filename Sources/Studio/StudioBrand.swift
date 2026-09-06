@@ -44,11 +44,7 @@ struct StudioLaunchSurface: View {
             VStack(spacing: 32) {
                 VStack(spacing: 20) {
                     CBKLogo().frame(width: 64, height: 64)
-                    VStack(spacing: 8) {
-                        Text("Studio").font(.system(size: 30, weight: .semibold))
-                        Text("Your workspace, on your Mac.")
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
-                    }
+                    Text("Studio").font(.system(size: 30, weight: .semibold))
                 }
                 VStack(spacing: 14) {
                     HStack(alignment: .firstTextBaseline) {
@@ -76,8 +72,6 @@ struct StudioLaunchSurface: View {
                         }
                     }.padding(.top, 6)
                 }.frame(width: 360)
-                Text("BY CHATBOTKIT").font(.system(size: 9, weight: .medium))
-                    .tracking(2).foregroundStyle(.secondary)
             }.padding(40)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
