@@ -31,6 +31,46 @@ import WebKit
     #expect(!handler.openInDefaultBrowser(URLRequest(url: URL(string: "https://example.com")!)))
 }
 
+@Test @MainActor func newWindowsStayInStudioOnlyForTheExactOrigin() {
+    var internalURLs: [URL] = []
+    var browserURLs: [URL] = []
+    let handler = ExternalBrowserWindowDelegate(
+        openURL: { browserURLs.append($0); return true },
+        openInternalURL: { internalURLs.append($0); return true }
+    )
+    let source = URL(string: "http://127.0.0.1:3000/overview")!
+
+    #expect(handler.openNewWindow(
+        URLRequest(url: URL(string: "http://127.0.0.1:3000/bots/new")!),
+        from: source
+    ))
+    #expect(handler.openNewWindow(
+        URLRequest(url: URL(string: "http://127.0.0.1:4000/help")!),
+        from: source
+    ))
+    #expect(handler.openNewWindow(
+        URLRequest(url: URL(string: "https://chatbotkit.com/docs")!),
+        from: source
+    ))
+
+    #expect(internalURLs.map(\.absoluteString) == ["http://127.0.0.1:3000/bots/new"])
+    #expect(browserURLs.map(\.absoluteString) == [
+        "http://127.0.0.1:4000/help",
+        "https://chatbotkit.com/docs"
+    ])
+}
+
+@Test @MainActor func implicitAndExplicitDefaultPortsHaveTheSameOrigin() {
+    #expect(ExternalBrowserWindowDelegate.hasSameOrigin(
+        URL(string: "https://example.com/new")!,
+        URL(string: "https://example.com:443/current")!
+    ))
+    #expect(!ExternalBrowserWindowDelegate.hasSameOrigin(
+        URL(string: "http://example.com/new")!,
+        URL(string: "https://example.com/current")!
+    ))
+}
+
 @Test @MainActor func embeddedLoopbackPageIsGrantedMicrophoneOnly() {
     let pageURL = URL(string: "http://127.0.0.1:3000/overview")!
     #expect(ExternalBrowserWindowDelegate.mediaCaptureDecision(
@@ -96,5 +136,35 @@ import WebKit
     _ = try await view.evaluateJavaScript("window.open('https://example.com/window', '_blank'); void 0")
     for _ in 0..<200 where opened.count < 2 { try await Task.sleep(for: .milliseconds(25)) }
     #expect(opened.map(\.absoluteString) == ["https://example.com/blank", "https://example.com/window"])
+    #expect(view.url == originalURL)
+}
+
+@Test @MainActor func webKitRoutesSameOriginBlankToStudioWindow() async throws {
+    _ = NSApplication.shared
+    var internalURLs: [URL] = []
+    var browserURLs: [URL] = []
+    let handler = ExternalBrowserWindowDelegate(
+        openURL: { browserURLs.append($0); return true },
+        openInternalURL: { internalURLs.append($0); return true }
+    )
+    let observer = PageLoadObserver()
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .nonPersistent()
+    configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+    let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 400, height: 300), configuration: configuration)
+    view.uiDelegate = handler
+    view.navigationDelegate = observer
+    defer { view.stopLoading(); view.uiDelegate = nil; view.navigationDelegate = nil }
+    view.loadHTMLString(
+        "<a id='internal' href='/bots/new' target='_blank' rel='noopener'>Internal</a>",
+        baseURL: URL(string: "http://127.0.0.1:3000/overview")!
+    )
+    for _ in 0..<200 where !observer.finished { try await Task.sleep(for: .milliseconds(25)) }
+    try #require(observer.finished)
+    let originalURL = view.url
+    _ = try await view.evaluateJavaScript("document.getElementById('internal').click(); void 0")
+    for _ in 0..<200 where internalURLs.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
+    #expect(internalURLs.map(\.absoluteString) == ["http://127.0.0.1:3000/bots/new"])
+    #expect(browserURLs.isEmpty)
     #expect(view.url == originalURL)
 }

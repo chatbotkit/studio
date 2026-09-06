@@ -1397,20 +1397,31 @@ final class AppModel: ObservableObject {
 @MainActor
 final class EmbeddedWebInspector {
     static let shared = EmbeddedWebInspector()
-    private weak var webView: WKWebView?
+    private let webViews = NSHashTable<WKWebView>.weakObjects()
 
     private init() {}
 
     func attach(_ webView: WKWebView) {
-        self.webView = webView
+        webViews.add(webView)
+    }
+
+    func detach(_ webView: WKWebView) {
+        webViews.remove(webView)
+    }
+
+    private var activeWebView: WKWebView? {
+        let views = webViews.allObjects
+        return views.first(where: { $0.window === NSApp.keyWindow })
+            ?? views.first(where: { $0.window?.isMainWindow == true })
+            ?? views.last
     }
 
     func reload() {
-        webView?.reload()
+        activeWebView?.reload()
     }
 
     func show() {
-        guard let webView else { return }
+        guard let webView = activeWebView else { return }
         webView.window?.makeKeyAndOrderFront(nil)
         webView.window?.makeFirstResponder(webView)
 
@@ -1436,12 +1447,13 @@ struct EmbeddedWebView: NSViewRepresentable {
     let colorScheme: ColorScheme
     let onEdgeColors: @MainActor (NSColor, NSColor) -> Void
     let onReady: @MainActor () -> Void
+    var onOpenInternalWindow: @MainActor (URL) -> Bool = { _ in false }
     var onLoading: @MainActor () -> Void = {}
     var onFailure: @MainActor (String) -> Void = { _ in }
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        let externalBrowserWindows = ExternalBrowserWindowDelegate()
+        let externalBrowserWindows: ExternalBrowserWindowDelegate
         var loaded: URL?
         private weak var observedWebView: WKWebView?
         private var themeColorObservation: NSKeyValueObservation?
@@ -1469,9 +1481,13 @@ struct EmbeddedWebView: NSViewRepresentable {
         init(
             onEdgeColors: @escaping @MainActor (NSColor, NSColor) -> Void,
             onReady: @escaping @MainActor () -> Void,
+            onOpenInternalWindow: @escaping @MainActor (URL) -> Bool = { _ in false },
             onLoading: @escaping @MainActor () -> Void = {},
             onFailure: @escaping @MainActor (String) -> Void = { _ in }
         ) {
+            self.externalBrowserWindows = ExternalBrowserWindowDelegate(
+                openInternalURL: onOpenInternalWindow
+            )
             self.onEdgeColors = onEdgeColors
             self.onReady = onReady
             self.onLoading = onLoading
@@ -1727,7 +1743,15 @@ struct EmbeddedWebView: NSViewRepresentable {
         """#
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(onEdgeColors: onEdgeColors, onReady: onReady, onLoading: onLoading, onFailure: onFailure) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onEdgeColors: onEdgeColors,
+            onReady: onReady,
+            onOpenInternalWindow: onOpenInternalWindow,
+            onLoading: onLoading,
+            onFailure: onFailure
+        )
+    }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -1780,6 +1804,7 @@ struct EmbeddedWebView: NSViewRepresentable {
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
         coordinator.externalBrowserWindows.confirmations.cancelPending()
         coordinator.stopColorObservation()
+        EmbeddedWebInspector.shared.detach(view)
         view.navigationDelegate = nil
         view.uiDelegate = nil
         view.stopLoading()
@@ -1928,9 +1953,20 @@ struct FailureView: View {
     }
 }
 
+struct StudioPageWindow: Codable, Hashable {
+    let id: UUID
+    let url: URL
+
+    init(url: URL) {
+        self.id = UUID()
+        self.url = url
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
     @SwiftUI.State private var pageReveal = WebPageRevealState()
     @SwiftUI.State private var pageError: String?
     @SwiftUI.State private var pageThemeColor = NSColor.windowBackgroundColor
@@ -1955,6 +1991,10 @@ struct ContentView: View {
                         onReady: {
                             pageError = nil
                             pageReveal.documentBecameReady()
+                        },
+                        onOpenInternalWindow: { destination in
+                            openWindow(value: StudioPageWindow(url: destination))
+                            return true
                         },
                         onLoading: {
                             pageError = nil
@@ -1992,6 +2032,77 @@ struct ContentView: View {
             pageError = nil
         }
         .task { if !RuntimeSmokeTest.requested { model.start() } }
+    }
+}
+
+struct StudioPageView: View {
+    let destination: StudioPageWindow
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
+    @SwiftUI.State private var pageReveal = WebPageRevealState()
+    @SwiftUI.State private var pageError: String?
+    @SwiftUI.State private var pageThemeColor = NSColor.windowBackgroundColor
+    @SwiftUI.State private var pageBackgroundColor = NSColor.windowBackgroundColor
+    @SwiftUI.State private var reloadID = UUID()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PageEdgeTitlebar(pageIsReady: pageReveal.hasRevealedPage, themeColor: pageThemeColor)
+            ZStack {
+                Color(nsColor: pageReveal.hasRevealedPage ? pageBackgroundColor : StudioBrand.background)
+                EmbeddedWebView(
+                    url: destination.url,
+                    colorScheme: colorScheme,
+                    onEdgeColors: { themeColor, backgroundColor in
+                        pageThemeColor = themeColor
+                        pageBackgroundColor = backgroundColor
+                    },
+                    onReady: {
+                        pageError = nil
+                        pageReveal.documentBecameReady()
+                    },
+                    onOpenInternalWindow: { url in
+                        openWindow(value: StudioPageWindow(url: url))
+                        return true
+                    },
+                    onLoading: { pageError = nil },
+                    onFailure: { pageError = $0 }
+                )
+                .id(reloadID)
+                .opacity(pageReveal.hasRevealedPage ? 1 : 0)
+                .animation(.easeOut(duration: 0.35), value: pageReveal.hasRevealedPage)
+
+                if let errorMessage = pageError {
+                    VStack(spacing: 16) {
+                        Label("The window couldn’t load", systemImage: "exclamationmark.circle")
+                            .font(.title2)
+                        Text(errorMessage)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                        Button("Reload") {
+                            pageError = nil
+                            pageReveal.stackWasReplaced()
+                            reloadID = UUID()
+                        }
+                    }
+                    .padding(40)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(nsColor: StudioBrand.background))
+                } else if !pageReveal.hasRevealedPage {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+        }
+        .ignoresSafeArea(edges: .top)
+        .frame(minWidth: 760, minHeight: 520)
+        .background(WindowChromeInstaller(
+            pageIsReady: pageReveal.hasRevealedPage,
+            pageBackgroundColor: pageBackgroundColor
+        ))
     }
 }
 
@@ -2378,8 +2489,18 @@ struct StudioApp: App {
             .windowResizability(.contentMinSize)
             .commands { StackCommands(model: model, selectedSettingsTab: $selectedSettingsTab) }
             .commands {
+                CommandGroup(replacing: .newItem) {}
                 CommandGroup(after: .appInfo) { CheckForUpdatesButton() }
             }
+        WindowGroup("Studio", for: StudioPageWindow.self) { $destination in
+            if let destination {
+                StudioPageView(destination: destination)
+                    .tint(Color(nsColor: StudioBrand.foreground))
+            }
+        }
+            .defaultSize(width: 1100, height: 760)
+            .windowStyle(.hiddenTitleBar)
+            .windowResizability(.contentMinSize)
         Settings {
             StudioSettingsView(model: model, selection: $selectedSettingsTab)
         }
