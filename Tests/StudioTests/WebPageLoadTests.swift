@@ -88,3 +88,16 @@ import Testing
     for _ in 0..<300 where !ready { try await Task.sleep(for: .milliseconds(10)) }
     #expect(ready)
 }
+
+@Test @MainActor func embeddedContentKeepsWebKitsNativeMouseHandling() {
+    _ = NSApplication.shared
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .nonPersistent()
+
+    let view = EmbeddedWebView.makeContentWebView(configuration: configuration)
+
+    // WKWebView is flipped, so a custom AppKit drag-region calculation can
+    // accidentally consume controls along the bottom edge of the webpage.
+    #expect(view.isFlipped)
+    #expect(type(of: view) == WKWebView.self)
+}

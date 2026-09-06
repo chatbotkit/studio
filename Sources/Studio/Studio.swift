@@ -1431,24 +1431,6 @@ final class EmbeddedWebInspector {
     }
 }
 
-final class DraggableWebView: WKWebView {
-    private let dragHeight: CGFloat = 38
-    private let trafficLightClearance: CGFloat = 78
-
-    private func isInWindowDragRegion(_ event: NSEvent) -> Bool {
-        let point = convert(event.locationInWindow, from: nil)
-        return point.x >= trafficLightClearance && point.y >= bounds.maxY - dragHeight
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard isInWindowDragRegion(event) else {
-            super.mouseDown(with: event)
-            return
-        }
-        window?.performDrag(with: event)
-    }
-}
-
 struct EmbeddedWebView: NSViewRepresentable {
     let url: URL
     let colorScheme: ColorScheme
@@ -1760,7 +1742,7 @@ struct EmbeddedWebView: NSViewRepresentable {
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
         ))
-        let view = DraggableWebView(frame: .zero, configuration: configuration)
+        let view = Self.makeContentWebView(configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator.externalBrowserWindows
         view.isInspectable = true
@@ -1775,6 +1757,13 @@ struct EmbeddedWebView: NSViewRepresentable {
         view.load(URLRequest(url: url))
         context.coordinator.loaded = url
         return view
+    }
+
+    static func makeContentWebView(configuration: WKWebViewConfiguration) -> WKWebView {
+        // Window dragging belongs to WindowDragSurface. Keeping the content
+        // view as a plain WKWebView ensures controls at every page edge receive
+        // their mouse events; WKWebView uses flipped view coordinates.
+        WKWebView(frame: .zero, configuration: configuration)
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
