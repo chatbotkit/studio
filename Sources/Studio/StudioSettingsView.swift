@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum StudioSettingsTab: Hashable {
+    case models
     case storage
     case updates
 }
@@ -11,6 +12,12 @@ struct StudioSettingsView: View {
 
     var body: some View {
         TabView(selection: $selection.animation(.easeInOut(duration: 0.22))) {
+            ModelProvidersSettingsView(model: model)
+                .tabItem {
+                    Label("Models", systemImage: "key.horizontal")
+                }
+                .tag(StudioSettingsTab.models)
+
             StorageView(model: model)
                 .tabItem {
                     Label("Storage", systemImage: "internaldrive")

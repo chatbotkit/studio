@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add native model-provider settings for every provider exposed by the Studio platform distribution. Credentials are updated atomically inside the private `platform-data` disk, never read back into the macOS UI, and applied by the platform’s existing configuration watcher.
 - Simplify the startup surface and retire it after the first successful page load, fading WebKit in without allowing the loading UI to flash behind later navigation or reloads.
 - Replace the single update form with a native, automatically content-sized icon-tab Settings window matching Noodle, move storage management into Settings, and route Stack → Manage Storage directly to the Storage tab.
 

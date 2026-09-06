@@ -5,6 +5,18 @@ import Foundation
 protocol StackRuntime: Sendable {
     func start(kernelURL: URL, dataRoot: URL, event: @escaping @MainActor @Sendable (RuntimeEvent) -> Void) async throws -> StackInfo
     func stop() async throws -> [String]
+    func configuredModelCredentialKeys() async throws -> Set<String>
+    func updateModelCredentials(_ changes: [ModelCredentialChange]) async throws -> Set<String>
+}
+
+extension StackRuntime {
+    func configuredModelCredentialKeys() async throws -> Set<String> {
+        throw AppRuntimeError("Model credentials are unavailable in this runtime.")
+    }
+
+    func updateModelCredentials(_ changes: [ModelCredentialChange]) async throws -> Set<String> {
+        throw AppRuntimeError("Model credentials are unavailable in this runtime.")
+    }
 }
 
 enum GracefulShutdown {

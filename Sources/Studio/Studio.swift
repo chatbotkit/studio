@@ -79,6 +79,22 @@ final class MemoryWriter: Writer, @unchecked Sendable {
     }
 }
 
+private final class OneShotDataReader: ReaderStream, @unchecked Sendable {
+    private let data: Data
+
+    init(_ data: Data) {
+        self.data = data
+    }
+
+    func stream() -> AsyncStream<Data> {
+        let data = self.data
+        return AsyncStream { continuation in
+            continuation.yield(data)
+            continuation.finish()
+        }
+    }
+}
+
 // MARK: - OCI Compose artifact
 
 struct OCIStackBundle: Sendable {
@@ -754,6 +770,129 @@ actor PrivateOCIStackRuntime: StackRuntime {
         return warnings
     }
 
+    func configuredModelCredentialKeys() async throws -> Set<String> {
+        let output = try await runCredentialCommand(script: credentialStatusScript())
+        return Set(try JSONDecoder().decode([String].self, from: output))
+    }
+
+    func updateModelCredentials(_ changes: [ModelCredentialChange]) async throws -> Set<String> {
+        guard !changes.isEmpty else { return try await configuredModelCredentialKeys() }
+        var seen: Set<String> = []
+        for change in changes {
+            guard ModelCredentialCatalog.managedKeys.contains(change.key), seen.insert(change.key).inserted else {
+                throw AppRuntimeError("Studio refused an unsupported credential change.")
+            }
+            if let value = change.value {
+                guard !value.isEmpty, value.utf8.count <= 16_384,
+                      value.unicodeScalars.allSatisfy({ $0.value != 0 && $0.value != 10 && $0.value != 13 }) else {
+                    throw AppRuntimeError("Studio refused an invalid credential value.")
+                }
+            }
+        }
+        let input = try JSONEncoder().encode(changes)
+        guard input.count <= 64 * 1024 else {
+            throw AppRuntimeError("The credential update is too large.")
+        }
+        let output = try await runCredentialCommand(script: credentialUpdateScript(), input: input)
+        return Set(try JSONDecoder().decode([String].self, from: output))
+    }
+
+    private func credentialStatusScript() throws -> String {
+        let keys = try String(
+            decoding: JSONEncoder().encode(ModelCredentialCatalog.managedKeys.sorted()),
+            as: UTF8.self
+        )
+        return "const managed=new Set(\(keys));" + #"""
+        const fs=require('fs');
+        const file='/data/config.env';
+        const configured=()=>{
+          if(!fs.existsSync(file)) return [];
+          const found=new Set();
+          for(const line of fs.readFileSync(file,'utf8').split(/\r?\n/)){
+            const at=line.indexOf('=');
+            if(at>0&&line.length>at+1&&managed.has(line.slice(0,at))) found.add(line.slice(0,at));
+          }
+          return Array.from(found).sort();
+        };
+        process.stdout.write(JSON.stringify(configured()));
+        """#
+    }
+
+    private func credentialUpdateScript() throws -> String {
+        let keys = try String(
+            decoding: JSONEncoder().encode(ModelCredentialCatalog.managedKeys.sorted()),
+            as: UTF8.self
+        )
+        return "const managed=new Set(\(keys));" + #"""
+        const fs=require('fs');
+        const file='/data/config.env';
+        const fail=message=>{ console.error(message); process.exit(1); };
+        try {
+          const raw=fs.readFileSync(0,'utf8');
+          if(Buffer.byteLength(raw,'utf8')>65536) fail('Credential update is too large.');
+          const payload=JSON.parse(raw);
+          if(!Array.isArray(payload)) fail('Credential update is invalid.');
+          const changes=new Map();
+          for(const item of payload){
+            if(!item||typeof item.key!=='string'||!managed.has(item.key)||changes.has(item.key)) fail('Credential update contains an unsupported key.');
+            if(item.value!==null&&(typeof item.value!=='string'||item.value.length===0||Buffer.byteLength(item.value,'utf8')>16384||/[\r\n\0]/.test(item.value))) fail('Credential update contains an invalid value.');
+            changes.set(item.key,item.value);
+          }
+          let lines=fs.existsSync(file)?fs.readFileSync(file,'utf8').split(/\r?\n/):[];
+          while(lines.length&&lines[lines.length-1]==='') lines.pop();
+          lines=lines.filter(line=>{
+            const at=line.indexOf('=');
+            return at<=0||!changes.has(line.slice(0,at));
+          });
+          for(const [key,value] of changes){ if(value!==null) lines.push(key+'='+value); }
+          fs.mkdirSync('/data',{recursive:true,mode:0o700});
+          const temporary=file+'.studio-'+process.pid;
+          try {
+            fs.writeFileSync(temporary,lines.length?lines.join('\n')+'\n':'',{encoding:'utf8',mode:0o600});
+            fs.chmodSync(temporary,0o600);
+            fs.renameSync(temporary,file);
+          } catch(error) {
+            try { fs.unlinkSync(temporary); } catch {}
+            throw error;
+          }
+          const found=new Set();
+          for(const line of lines){
+            const at=line.indexOf('=');
+            if(at>0&&line.length>at+1&&managed.has(line.slice(0,at))) found.add(line.slice(0,at));
+          }
+          process.stdout.write(JSON.stringify(Array.from(found).sort()));
+        } catch(error) {
+          fail('Unable to update model credentials.');
+        }
+        """#
+    }
+
+    private func runCredentialCommand(script: String, input: Data? = nil) async throws -> Data {
+        guard let pod, startedServices.contains("platform") else {
+            throw AppRuntimeError("Start Studio’s platform before managing model providers.")
+        }
+        let stdout = MemoryWriter()
+        let stderr = MemoryWriter()
+        let process = try await pod.execInContainer(
+            "platform",
+            processID: "studio-credentials-" + UUID().uuidString.lowercased()
+        ) { configuration in
+            configuration.arguments = ["node", "-e", script]
+            configuration.user = .init(uid: 1001, gid: 1001)
+            configuration.capabilities = .init()
+            configuration.noNewPrivileges = true
+            configuration.stdin = input.map(OneShotDataReader.init)
+            configuration.stdout = stdout
+            configuration.stderr = stderr
+        }
+        let status = try await runProbe(process, timeout: 10)
+        guard status.exitCode == 0 else {
+            let detail = stderr.text().trimmingCharacters(in: .whitespacesAndNewlines)
+            throw AppRuntimeError(detail.isEmpty ? "Studio could not update model credentials." : detail)
+        }
+        return Data(stdout.text().utf8)
+    }
+
     private func prepareInitfs(store: ImageStore, at path: URL) async throws -> Containerization.Mount {
         if FileManager.default.fileExists(atPath: path.path) {
             return .block(format: "ext4", source: path.path, destination: "/", options: ["ro"])
@@ -993,7 +1132,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var storageReport: StorageReport?
     @Published private(set) var storageError: String?
     @Published private(set) var storageBusy = false
+    @Published private(set) var configuredModelCredentialKeys: Set<String> = []
+    @Published private(set) var modelCredentialsError: String?
+    @Published private(set) var modelCredentialsNotice: String?
+    @Published private(set) var modelCredentialsBusy = false
     private var storageTask: Task<Void, Never>?
+    private var modelCredentialsTask: Task<Void, Never>?
     private let runtime: any StackRuntime
     private let resources: @MainActor () throws -> (kernel: URL, data: URL)
     private var task: Task<Void, Never>?
@@ -1023,7 +1167,7 @@ final class AppModel: ObservableObject {
     func start() {
         // A restored or auxiliary window may ask the shared model to start.
         // Only the initial idle state is allowed to create the private pod.
-        guard case .idle = phase, !isShuttingDown, !storageBusy, !RuntimeSmokeTest.requested else { return }
+        guard case .idle = phase, !isShuttingDown, !storageBusy, !modelCredentialsBusy, !RuntimeSmokeTest.requested else { return }
         phase = .resolving
         generation = UUID()
         let run = generation
@@ -1056,7 +1200,7 @@ final class AppModel: ObservableObject {
     }
 
     func restart(cleanup: StorageReport? = nil) {
-        guard !phase.busy, !isShuttingDown, !storageBusy else { return }
+        guard !phase.busy, !isShuttingDown, !storageBusy, !modelCredentialsBusy else { return }
         let previous = task
         previous?.cancel()
         generation = UUID()
@@ -1098,7 +1242,7 @@ final class AppModel: ObservableObject {
     }
 
     func inspectStorage() {
-        guard !phase.busy, !isShuttingDown, !storageBusy else { return }
+        guard !phase.busy, !isShuttingDown, !storageBusy, !modelCredentialsBusy else { return }
         storageBusy = true
         storageError = nil
         let digest = info?.resolvedDigest
@@ -1106,6 +1250,40 @@ final class AppModel: ObservableObject {
             defer { storageBusy = false; storageTask = nil }
             do { storageReport = try await StorageMaintenance.inspect(root: resources().data, activeDigest: digest) }
             catch { storageError = error.localizedDescription }
+        }
+    }
+
+    func inspectModelCredentials() {
+        guard info != nil, !phase.busy, !isShuttingDown, !storageBusy, !modelCredentialsBusy else { return }
+        modelCredentialsBusy = true
+        modelCredentialsError = nil
+        modelCredentialsTask = Task {
+            defer { modelCredentialsBusy = false; modelCredentialsTask = nil }
+            do {
+                configuredModelCredentialKeys = try await runtime.configuredModelCredentialKeys()
+            } catch is CancellationError {
+                return
+            } catch {
+                modelCredentialsError = error.localizedDescription
+            }
+        }
+    }
+
+    func updateModelCredentials(_ changes: [ModelCredentialChange]) {
+        guard info != nil, !phase.busy, !isShuttingDown, !storageBusy, !modelCredentialsBusy else { return }
+        modelCredentialsBusy = true
+        modelCredentialsError = nil
+        modelCredentialsNotice = nil
+        modelCredentialsTask = Task {
+            defer { modelCredentialsBusy = false; modelCredentialsTask = nil }
+            do {
+                configuredModelCredentialKeys = try await runtime.updateModelCredentials(changes)
+                modelCredentialsNotice = "Saved. The platform is reloading its model providers."
+            } catch is CancellationError {
+                return
+            } catch {
+                modelCredentialsError = error.localizedDescription
+            }
         }
     }
 
@@ -1118,10 +1296,13 @@ final class AppModel: ObservableObject {
         previous?.cancel()
         let inspection = storageTask
         inspection?.cancel()
+        let credentials = modelCredentialsTask
+        credentials?.cancel()
         let operation = Task { @MainActor in
             // Await cancellation/cleanup before touching the runtime again.
             await previous?.value
             await inspection?.value
+            await credentials?.value
             do {
                 let warnings = try await runtime.stop()
                 appendContainerLines(service: "runtime", lines: warnings)
@@ -2155,7 +2336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct StudioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel.shared
-    @SwiftUI.State private var selectedSettingsTab = StudioSettingsTab.storage
+    @SwiftUI.State private var selectedSettingsTab = StudioSettingsTab.models
     var body: some Scene {
         Window("Studio", id: "main") {
             ContentView(model: model).tint(Color(nsColor: StudioBrand.foreground))
