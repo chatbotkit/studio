@@ -2060,6 +2060,8 @@ struct LiveLogsView: View {
 struct StackCommands: Commands {
     @ObservedObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    @Binding var selectedSettingsTab: StudioSettingsTab
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About Studio") { openWindow(id: "about-studio") }
@@ -2072,7 +2074,10 @@ struct StackCommands: Commands {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Button("Show Stack Details") { openWindow(id: "stack-details") }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
-            Button("Manage Storage") { openWindow(id: "storage") }
+            Button("Manage Storage") {
+                selectedSettingsTab = .storage
+                openSettings()
+            }
             Divider()
             Button("Show Web Inspector") { EmbeddedWebInspector.shared.show() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
@@ -2142,17 +2147,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct StudioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel.shared
+    @SwiftUI.State private var selectedSettingsTab = StudioSettingsTab.storage
     var body: some Scene {
         Window("Studio", id: "main") {
             ContentView(model: model).tint(Color(nsColor: StudioBrand.foreground))
         }
             .windowStyle(.hiddenTitleBar)
             .windowResizability(.contentMinSize)
-            .commands { StackCommands(model: model) }
+            .commands { StackCommands(model: model, selectedSettingsTab: $selectedSettingsTab) }
             .commands {
                 CommandGroup(after: .appInfo) { CheckForUpdatesButton() }
             }
-        Settings { UpdatesSettingsView() }
+        Settings {
+            StudioSettingsView(model: model, selection: $selectedSettingsTab)
+        }
         Window("Stack Details", id: "stack-details") {
             StackDetailsView(model: model).tint(Color(nsColor: StudioBrand.foreground))
         }
@@ -2164,7 +2172,5 @@ struct StudioApp: App {
         Window("About Studio", id: "about-studio") { AboutStudioView() }
             .windowResizability(.contentSize)
             .defaultPosition(.center)
-        Window("Studio Storage", id: "storage") { StorageView(model: model) }
-            .windowResizability(.contentSize)
     }
 }

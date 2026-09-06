@@ -74,21 +74,45 @@ struct UpdatesSettingsView: View {
     @ObservedObject private var preparation = AppUpdater.shared.preparation
     var body: some View {
         Form {
-            LabeledContent("Installed Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
-            CheckForUpdatesButton()
-            Toggle("Automatically check for updates", isOn: Binding(get: { updater.automaticallyChecks }, set: { value in updater.setAutomaticChecks(value) }))
-            Toggle("Automatically download and install updates", isOn: Binding(get: { updater.automaticallyDownloads }, set: { value in updater.setAutomaticDownloads(value) }))
+            Section {
+                LabeledContent("Installed Version") {
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
+                }
+                CheckForUpdatesButton()
+            }
+
+            Section {
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { updater.automaticallyChecks },
+                    set: { value in updater.setAutomaticChecks(value) }
+                ))
+                Toggle("Automatically download and install updates", isOn: Binding(
+                    get: { updater.automaticallyDownloads },
+                    set: { value in updater.setAutomaticDownloads(value) }
+                ))
                 .disabled(!updater.allowsAutomaticUpdates)
-            Text("Updates are signed and delivered through GitHub. Save work in the web page before installing. Studio waits for stack operations and safely stops its VM before restarting.")
-                .font(.caption).foregroundStyle(.secondary)
+            } footer: {
+                Text("Updates are signed and delivered through GitHub. Save work in the embedded page before installing. Studio waits for stack operations and safely stops its VM before restarting.")
+            }
+
             if Bundle.main.object(forInfoDictionaryKey: "StudioUpdatesEnabled") as? Bool != true {
-                Text("Updates are disabled in this development build.").font(.caption)
+                Text("Updates are disabled in this development build.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            if preparation.waiting { Label("Preparing update: waiting for stack operations or VM shutdown…", systemImage: "clock") }
+            if preparation.waiting {
+                Label("Preparing update: waiting for stack operations or VM shutdown…", systemImage: "clock")
+                    .foregroundStyle(.secondary)
+            }
             if let error = preparation.error {
-                Text(error).foregroundStyle(.secondary)
-                Button("Retry Installing Update") { preparation.retry() }
+                Section {
+                    Text(error)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Button("Retry Installing Update") { preparation.retry() }
+                }
             }
-        }.formStyle(.grouped).frame(width: 560).padding()
+        }
+        .formStyle(.grouped)
     }
 }

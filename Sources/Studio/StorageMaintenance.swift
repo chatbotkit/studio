@@ -112,28 +112,54 @@ struct StorageView: View {
     private func size(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Studio Storage").font(.title2.bold())
+        Form {
             if let report = model.storageReport {
-                LabeledContent("Free on this disk", value: size(report.freeBytes))
-                LabeledContent("Image and artifact caches", value: size(report.cacheBytes))
-                LabeledContent("Service disks (preserved)", value: size(report.serviceDiskBytes))
-                LabeledContent("Persistent data and backups (preserved)", value: size(report.volumeBytes))
-                Divider()
-                Text("Cleanup preview: \(report.obsoleteImages.count) obsolete image references, \(report.obsoleteArtifacts.count) artifact directories, and \(size(Int64(report.orphanedBytes))) of currently unreferenced image blobs.")
-                Text("Shared image layers are reclaimed only when no retained image uses them. Disk sizes are allocated-byte estimates and may count shared APFS blocks more than once.").font(.caption).foregroundStyle(.secondary)
-                Button("Clean Caches and Restart…") { confirming = true }
-                    .disabled(model.phase.busy || model.storageBusy)
+                Section("Usage") {
+                    LabeledContent("Free on this disk", value: size(report.freeBytes))
+                    LabeledContent("Image and artifact caches", value: size(report.cacheBytes))
+                    LabeledContent("Service disks", value: size(report.serviceDiskBytes))
+                    LabeledContent("Persistent data and backups", value: size(report.volumeBytes))
+                }
+
+                Section {
+                    Text("\(report.obsoleteImages.count) obsolete image references, \(report.obsoleteArtifacts.count) artifact directories, and \(size(Int64(report.orphanedBytes))) of currently unreferenced image blobs can be cleaned.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Clean Caches and Restart…") { confirming = true }
+                        .disabled(model.phase.busy || model.storageBusy)
+                } header: {
+                    Text("Cleanup")
+                } footer: {
+                    Text("Shared image layers are reclaimed only when no retained image uses them. Disk sizes are allocated-byte estimates and may count shared APFS blocks more than once. Persistent volumes, backups, and service disks are preserved.")
+                }
             }
-            if let error = model.storageError { Text(error).foregroundStyle(.secondary).textSelection(.enabled) }
-            if model.storageBusy { ProgressView() }
-            Button("Refresh") { model.inspectStorage() }.disabled(model.phase.busy || model.storageBusy)
-            Text("Cleanup stops the stack first. It never deletes databases, user files, persistent volumes, their backups, or service disks.").font(.caption).foregroundStyle(.secondary)
-        }.padding(28).frame(width: 580)
-            .task { model.inspectStorage() }
-            .confirmationDialog("Remove the previewed caches and restart Studio’s stack?", isPresented: $confirming) {
-                Button("Clean Caches and Restart", role: .destructive) { model.restart(cleanup: model.storageReport) }
-                Button("Cancel", role: .cancel) {}
-            } message: { Text("Removed caches can be downloaded again. Persistent data will be preserved.") }
+
+            if let error = model.storageError {
+                Section {
+                    Text(error)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            Section {
+                HStack {
+                    Button("Refresh") { model.inspectStorage() }
+                        .disabled(model.phase.busy || model.storageBusy)
+                    if model.storageBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Inspecting Studio storage")
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .task { model.inspectStorage() }
+        .confirmationDialog("Remove the previewed caches and restart Studio’s stack?", isPresented: $confirming) {
+            Button("Clean Caches and Restart", role: .destructive) { model.restart(cleanup: model.storageReport) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removed caches can be downloaded again. Persistent data will be preserved.")
+        }
     }
 }

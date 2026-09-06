@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replace the single update form with a native icon-tab Settings window matching Noodle, move storage management into Settings, and route Stack → Manage Storage directly to the Storage tab.
+
 ## 0.13.0
 
 - Show native unsaved-change and JavaScript confirmation sheets for embedded page navigation/reloads. Default to staying, suspend page-load timeouts while a prompt is open, and cancel pending replies safely during teardown.

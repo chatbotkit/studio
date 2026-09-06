@@ -12,7 +12,7 @@ enum DiskSafety {
 
     static func validate(available: Int64, additional: Int64) throws {
         guard additional >= 0, additional <= Int64.max - reserve, available >= additional + reserve else {
-            throw AppRuntimeError("Not enough disk space. This operation needs \(ByteCountFormatter.string(fromByteCount: max(0, additional), countStyle: .file)) plus 512 MiB of free headroom; \(ByteCountFormatter.string(fromByteCount: max(0, available), countStyle: .file)) is available. Use Stack → Manage Storage or free space on your Mac. Your existing volumes have not been deleted.")
+            throw AppRuntimeError("Not enough disk space. This operation needs \(ByteCountFormatter.string(fromByteCount: max(0, additional), countStyle: .file)) plus 512 MiB of free headroom; \(ByteCountFormatter.string(fromByteCount: max(0, available), countStyle: .file)) is available. Use Studio → Settings → Storage or free space on your Mac. Your existing volumes have not been deleted.")
         }
     }
 
