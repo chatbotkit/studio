@@ -15,8 +15,8 @@ if [[ "${STUDIO_REQUIRE_DEVELOPER_ID:-0}" == 1 && "$signature" != *'Authority=De
 fi
 entitlements="$(codesign -d --entitlements - --xml "$app" 2>/dev/null | tr -d '[:space:]')"
 count="$(printf '%s' "$entitlements" | grep -o '<key>' | wc -l | tr -d '[:space:]')"
-[[ "$count" == 5 ]] || { echo 'Unexpected sandbox entitlement count.' >&2; exit 1; }
-for key in app-sandbox network.client network.server virtualization; do
+[[ "$count" == 6 ]] || { echo 'Unexpected sandbox entitlement count.' >&2; exit 1; }
+for key in app-sandbox network.client network.server device.audio-input virtualization; do
     [[ "$entitlements" == *"<key>com.apple.security.$key</key><true/>"* ]] || {
         echo "Missing required entitlement: $key" >&2; exit 1;
     }
@@ -32,5 +32,9 @@ test -s "$app/Contents/Resources/Runtime/vmlinux-arm64"
 test -s "$app/Contents/Resources/Studio.icns"
 test -s "$app/Contents/Resources/Notices/Yams-LICENSE.txt"
 plutil -lint "$app/Contents/Info.plist"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$app/Contents/Info.plist")" == \
+    'Studio uses your microphone when you start a voice conversation.' ]] || {
+    echo 'Missing or unexpected microphone usage description.' >&2; exit 1;
+}
 bash "$(dirname "${BASH_SOURCE[0]}")/verify-updater.sh" "$app"
-echo 'Verified: hardened runtime, five-key approved sandbox policy, arm64, system/bundled-Sparkle linkage.'
+echo 'Verified: hardened runtime, six-key approved sandbox policy, microphone disclosure, arm64, system/bundled-Sparkle linkage.'

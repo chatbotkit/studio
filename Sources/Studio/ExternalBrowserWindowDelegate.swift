@@ -38,6 +38,40 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
 
     func webView(
         _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(Self.mediaCaptureDecision(
+            type: type,
+            scheme: origin.protocol,
+            host: origin.host,
+            port: origin.port,
+            pageURL: webView.url
+        ))
+    }
+
+    static func mediaCaptureDecision(
+        type: WKMediaCaptureType,
+        scheme: String,
+        host: String,
+        port: Int,
+        pageURL: URL?
+    ) -> WKPermissionDecision {
+        guard type == .microphone,
+              let pageURL,
+              let pageScheme = pageURL.scheme,
+              let pageHost = pageURL.host,
+              ["127.0.0.1", "localhost", "::1"].contains(host.lowercased()),
+              scheme.caseInsensitiveCompare(pageScheme) == .orderedSame,
+              host.caseInsensitiveCompare(pageHost) == .orderedSame,
+              pageURL.port == port else { return .deny }
+        return .prompt
+    }
+
+    func webView(
+        _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures

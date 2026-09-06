@@ -31,6 +31,41 @@ import WebKit
     #expect(!handler.openInDefaultBrowser(URLRequest(url: URL(string: "https://example.com")!)))
 }
 
+@Test @MainActor func embeddedLoopbackPageMayPromptForMicrophoneOnly() {
+    let pageURL = URL(string: "http://127.0.0.1:3000/overview")!
+    #expect(ExternalBrowserWindowDelegate.mediaCaptureDecision(
+        type: .microphone,
+        scheme: "http",
+        host: "127.0.0.1",
+        port: 3000,
+        pageURL: pageURL
+    ) == .prompt)
+    #expect(ExternalBrowserWindowDelegate.mediaCaptureDecision(
+        type: .cameraAndMicrophone,
+        scheme: "http",
+        host: "127.0.0.1",
+        port: 3000,
+        pageURL: pageURL
+    ) == .deny)
+}
+
+@Test @MainActor func mediaCaptureIsDeniedOutsideTheLoadedLoopbackOrigin() {
+    let pageURL = URL(string: "http://127.0.0.1:3000/overview")!
+    for (scheme, host, port) in [
+        ("https", "example.com", 443),
+        ("http", "localhost", 3000),
+        ("http", "127.0.0.1", 4000)
+    ] {
+        #expect(ExternalBrowserWindowDelegate.mediaCaptureDecision(
+            type: .microphone,
+            scheme: scheme,
+            host: host,
+            port: port,
+            pageURL: pageURL
+        ) == .deny)
+    }
+}
+
 @MainActor private final class PageLoadObserver: NSObject, WKNavigationDelegate {
     var finished = false
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finished = true }

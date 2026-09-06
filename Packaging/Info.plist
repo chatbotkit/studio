@@ -26,6 +26,8 @@
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Studio uses your microphone when you start a voice conversation.</string>
     <key>SUFeedURL</key>
     <string>https://github.com/chatbotkit/studio/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>
