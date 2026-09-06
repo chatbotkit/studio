@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Simplify the startup surface and retire it after the first successful page load, fading WebKit in without allowing the loading UI to flash behind later navigation or reloads.
-- Replace the single update form with a native icon-tab Settings window matching Noodle, move storage management into Settings, and route Stack → Manage Storage directly to the Storage tab.
+- Replace the single update form with a native, automatically content-sized icon-tab Settings window matching Noodle, move storage management into Settings, and route Stack → Manage Storage directly to the Storage tab.
 
 ## 0.13.0
 

@@ -114,5 +114,7 @@ struct UpdatesSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .frame(width: 580)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

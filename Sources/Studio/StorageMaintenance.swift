@@ -154,6 +154,8 @@ struct StorageView: View {
             }
         }
         .formStyle(.grouped)
+        .frame(width: 580)
+        .fixedSize(horizontal: false, vertical: true)
         .task { model.inspectStorage() }
         .confirmationDialog("Remove the previewed caches and restart Studio’s stack?", isPresented: $confirming) {
             Button("Clean Caches and Restart", role: .destructive) { model.restart(cleanup: model.storageReport) }

@@ -2169,6 +2169,7 @@ struct StudioApp: App {
         Settings {
             StudioSettingsView(model: model, selection: $selectedSettingsTab)
         }
+            .windowResizability(.contentSize)
         Window("Stack Details", id: "stack-details") {
             StackDetailsView(model: model).tint(Color(nsColor: StudioBrand.foreground))
         }

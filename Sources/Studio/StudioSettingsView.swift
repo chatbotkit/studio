@@ -10,7 +10,7 @@ struct StudioSettingsView: View {
     @Binding var selection: StudioSettingsTab
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $selection.animation(.easeInOut(duration: 0.22))) {
             StorageView(model: model)
                 .tabItem {
                     Label("Storage", systemImage: "internaldrive")
@@ -23,6 +23,6 @@ struct StudioSettingsView: View {
                 }
                 .tag(StudioSettingsTab.updates)
         }
-        .frame(width: 580, height: 380)
+        .windowResizeAnchor(.top)
     }
 }
