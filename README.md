@@ -17,6 +17,17 @@ The script builds a release executable and assembles a sandboxed, hardened-runti
 
 The app downloads images on first launch and needs sufficient free disk space for its image store, service disks, and persistent volumes. It publishes the platform on localhost:3000, selecting the next available port if necessary. Logs, stack details, reload, and Web Inspector are available in the Stack menu.
 
+Embedded pages can present native JavaScript confirmations and browser-style
+unsaved-change prompts when they register `beforeunload`. Navigating away or
+reloading offers **Stay on Page** / **Leave Page**, with Stay as the default.
+WebKit retains control of user-activation rules and whether a page requests a
+prompt; Studio does not infer dirty state from arbitrary form fields. In-page
+routers must still implement their own navigation guard (for example `confirm`).
+The macOS `beforeunload` callback currently requires an isolated WebKit private
+delegate selector, covered by a real-WebKit regression test. This is not a
+promise of protection against native app quit, stack restart, forced termination
+or crashes; those do not necessarily perform a browser navigation.
+
 Stack → Manage Storage shows allocated cache/data sizes and previews obsolete-cache cleanup. Cleanup requires confirmation, stops the stack, rechecks the preview, and preserves persistent volumes, backups, and service disks before restarting. Missing last-known-good image metadata makes cleanup retain all image references. Size estimates may double-count shared APFS blocks. Free-space checks reserve 512 MiB of headroom and conservatively budget image pulls and disk creation; they cannot guarantee another application will not consume space mid-operation. Disk replacements are staged and promoted only after successful creation and synchronization.
 
 Page failures and WebKit process termination offer a page-only reload without restarting containers. Readiness follows document loading with a bounded timeout, not pixel brightness. OCI manifests and YAML layers are size/hash-verified before decoding; the adapter limits configuration objects to 2 MiB each.

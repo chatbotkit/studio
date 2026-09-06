@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show native unsaved-change and JavaScript confirmation sheets for embedded page navigation/reloads. Default to staying, suspend page-load timeouts while a prompt is open, and cancel pending replies safely during teardown.
 - Apply each service's verified Compose environment, including YAML anchors and empty/unset semantics, so Studio trusted sign-in and current storage defaults match the distribution. Add loopback-only relay/storage forwarding and remove the stale Community loading label.
 - Switch the default OCI stack to `oci://ghcr.io/chatbotkit/platform-studio:latest`, share that reference with the isolated smoke test, and recognize Studio artifact layers while retaining Community compatibility.
 

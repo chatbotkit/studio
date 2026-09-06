@@ -1278,6 +1278,7 @@ struct EmbeddedWebView: NSViewRepresentable {
         let onLoading: @MainActor () -> Void
         let onFailure: @MainActor (String) -> Void
         private var activeNavigation: WKNavigation?
+        private var hasFinishedDocument = false
         private lazy var readiness = WebPageLoad { [weak self] state in
             guard let self else { return }
             switch state {
@@ -1300,6 +1301,7 @@ struct EmbeddedWebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard navigation === activeNavigation else { return }
+            hasFinishedDocument = true
             publishColors(from: webView)
             readiness.documentFinished()
         }
@@ -1324,11 +1326,19 @@ struct EmbeddedWebView: NSViewRepresentable {
 
         private func navigationFailed(_ navigation: WKNavigation?, error: Error) {
             guard navigation === activeNavigation else { return }
+            let error = error as NSError
+            if hasFinishedDocument, error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled {
+                // A declined beforeunload prompt keeps the existing document.
+                readiness.documentFinished()
+                return
+            }
             readiness.fail(error.localizedDescription)
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             guard observedWebView === webView else { return }
+            externalBrowserWindows.confirmations.cancelPending()
+            hasFinishedDocument = false
             readiness.fail("The web page process stopped. Your container stack is still running; reload the page to reconnect.")
         }
 
@@ -1363,6 +1373,9 @@ struct EmbeddedWebView: NSViewRepresentable {
         }
 
         func startColorObservation(in webView: WKWebView) {
+            externalBrowserWindows.confirmations.onActivityChanged = { [weak self] active in
+                self?.readiness.setConfirmationActive(active)
+            }
             stopColorObservation()
             observedWebView = webView
             derivedPageBackgroundColor = webView.underPageBackgroundColor
@@ -1579,6 +1592,7 @@ struct EmbeddedWebView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
+        coordinator.externalBrowserWindows.confirmations.cancelPending()
         coordinator.stopColorObservation()
         view.navigationDelegate = nil
         view.uiDelegate = nil
