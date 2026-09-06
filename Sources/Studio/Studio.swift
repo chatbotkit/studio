@@ -2287,9 +2287,25 @@ struct StackCommands: Commands {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+enum AppMenuLayout {
+    static func placeUpdateCommandBelowSettings(in appMenu: NSMenu) {
+        guard let updateItem = appMenu.items.first(where: { $0.title == "Check for Updates…" }),
+              let updateIndex = appMenu.items.firstIndex(of: updateItem),
+              let settingsIndex = appMenu.items.firstIndex(where: { $0.title == "Settings…" }) else { return }
+        guard updateIndex != settingsIndex + 1 else { return }
+        appMenu.removeItem(updateItem)
+        guard let updatedSettingsIndex = appMenu.items.firstIndex(where: { $0.title == "Settings…" }) else { return }
+        appMenu.insertItem(updateItem, at: updatedSettingsIndex + 1)
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppUpdater.shared.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500)) {
+            self.configureAppMenu()
+        }
         guard RuntimeSmokeTest.requested else { return }
         Task {
             do {
@@ -2317,6 +2333,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
+    func applicationDidUpdate(_ notification: Notification) {
+        configureAppMenu()
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === NSApp.mainMenu?.items.first?.submenu else { return }
+        AppMenuLayout.placeUpdateCommandBelowSettings(in: menu)
+    }
+
+    private func configureAppMenu() {
+        guard let appMenu = NSApp.mainMenu?.items.first?.submenu else { return }
+        appMenu.delegate = self
+        AppMenuLayout.placeUpdateCommandBelowSettings(in: appMenu)
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
