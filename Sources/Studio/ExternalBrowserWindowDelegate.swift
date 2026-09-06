@@ -67,7 +67,11 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
               scheme.caseInsensitiveCompare(pageScheme) == .orderedSame,
               host.caseInsensitiveCompare(pageHost) == .orderedSame,
               pageURL.port == port else { return .deny }
-        return .prompt
+        // Studio is not a general-purpose browser. Once the request has passed
+        // the exact loaded-loopback-origin and microphone-only checks above,
+        // defer user consent to macOS rather than showing a second WebKit prompt
+        // labelled with the internal 127.0.0.1 address.
+        return .grant
     }
 
     func webView(

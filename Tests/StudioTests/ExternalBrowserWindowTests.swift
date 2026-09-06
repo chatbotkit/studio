@@ -31,7 +31,7 @@ import WebKit
     #expect(!handler.openInDefaultBrowser(URLRequest(url: URL(string: "https://example.com")!)))
 }
 
-@Test @MainActor func embeddedLoopbackPageMayPromptForMicrophoneOnly() {
+@Test @MainActor func embeddedLoopbackPageIsGrantedMicrophoneOnly() {
     let pageURL = URL(string: "http://127.0.0.1:3000/overview")!
     #expect(ExternalBrowserWindowDelegate.mediaCaptureDecision(
         type: .microphone,
@@ -39,7 +39,7 @@ import WebKit
         host: "127.0.0.1",
         port: 3000,
         pageURL: pageURL
-    ) == .prompt)
+    ) == .grant)
     #expect(ExternalBrowserWindowDelegate.mediaCaptureDecision(
         type: .cameraAndMicrophone,
         scheme: "http",
