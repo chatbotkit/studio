@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Switch the default OCI stack to `oci://ghcr.io/chatbotkit/platform-studio:latest`, share that reference with the isolated smoke test, and recognize Studio artifact layers while retaining Community compatibility.
+
 ## 0.12.0
 
 - Add Sparkle app updates with signed GitHub feeds and archives, Check for Updates, update settings, and confirmed VM shutdown before installation. Development builds keep updates disabled; the first updater-enabled release requires manual installation.

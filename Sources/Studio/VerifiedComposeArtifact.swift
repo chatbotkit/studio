@@ -40,10 +40,13 @@ enum VerifiedComposeArtifact {
             guard let text = String(data: bytes, encoding: .utf8) else { throw AppRuntimeError("The OCI YAML is not valid UTF-8.") }
             data.append(bytes)
             let title = layer.annotations?["org.opencontainers.image.title"] ?? layer.annotations?["com.docker.compose.file"] ?? ""
-            if title.contains("image-digests") || (title.isEmpty && text.contains("image: ghcr.io/chatbotkit/platform-community-app@sha256:")) {
+            let distributions = ["platform-studio", "platform-community"]
+            let hasPinnedApp = distributions.contains { text.contains("image: ghcr.io/chatbotkit/\($0)-app@sha256:") }
+            let hasComposeHeader = distributions.contains { text.contains("\($0) distribution stack") }
+            if title.contains("image-digests") || (title.isEmpty && hasPinnedApp) {
                 guard lockIndex == nil else { throw AppRuntimeError("The OCI project contains ambiguous image-lock layers.") }
                 lockIndex = index
-            } else if title.contains("compose") || text.contains("platform-community distribution stack") {
+            } else if title.contains("compose") || hasComposeHeader {
                 guard composeIndex == nil else { throw AppRuntimeError("The OCI project contains ambiguous Compose layers.") }
                 composeIndex = index
             }

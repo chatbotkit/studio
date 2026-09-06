@@ -63,7 +63,7 @@ Run this on Apple silicon with network access and at least 1 GiB free; allow add
 - Review the bundled Linux kernel's corresponding-source distribution and all dependency notices for public redistribution. The current kernel/provenance notices were carried over from the prototype.
 - Smoke-test the Developer ID-signed build on Apple silicon macOS 26: first launch/image download, existing-data startup, localhost access, shutdown/restart, logs, Web Inspector, and dragging the app into Applications.
 - Verify the downloaded, quarantined release passes Gatekeeper on another Mac. Local ad-hoc tests cannot establish notarization success.
-- Note that `platform-community:latest` remains a moving OCI tag. The app verifies a resolved manifest and digest-pinned images, but an app release does not freeze future stack contents.
+- Note that `platform-studio:latest` remains a moving OCI tag. The app verifies a resolved manifest and digest-pinned images, but an app release does not freeze future stack contents.
 
 ## Publish deliberately
 

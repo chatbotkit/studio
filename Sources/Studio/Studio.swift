@@ -13,7 +13,7 @@ import StudioConfiguration
 import SystemPackage
 import WebKit
 
-private let defaultOCIReference = "oci://ghcr.io/chatbotkit/platform-community:latest"
+let defaultOCIReference = "oci://ghcr.io/chatbotkit/platform-studio:latest"
 private let serviceNames = ["db-init", "redis", "qdrant", "garage", "garage-init", "platform"]
 
 struct AppRuntimeError: LocalizedError, Sendable {

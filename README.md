@@ -1,6 +1,6 @@
 # Studio
 
-A native macOS home for ChatBotKit, with its own embedded Apple Containerization runtime. Studio loads the Compose artifact at `oci://ghcr.io/chatbotkit/platform-community:latest`, runs the stack in an app-private Linux VM, and displays it in WebKit. It does not invoke the installed `container` CLI.
+A native macOS home for ChatBotKit, with its own embedded Apple Containerization runtime. Studio loads the Compose artifact at `oci://ghcr.io/chatbotkit/platform-studio:latest`, runs the stack in an app-private Linux VM, and displays it in WebKit. It does not invoke the installed `container` CLI.
 
 ## Development
 

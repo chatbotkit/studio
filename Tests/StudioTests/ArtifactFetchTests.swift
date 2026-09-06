@@ -44,6 +44,17 @@ private func artifact(_ layers: [Descriptor], objects: [String: Data], type: Str
     #expect(result.compose == compose && result.lock == lock)
 }
 
+@Test(arguments: ["platform-studio", "platform-community"], [true, false])
+func distributionHintsWorkWithReversedUnlabelledLayers(_ distribution: String, useImageHint: Bool) async throws {
+    let compose = Data((useImageHint ? "services: compose" : "# \(distribution) distribution stack\nservices: compose").utf8)
+    let lock = Data((useImageHint ? "services:\n  platform:\n    image: ghcr.io/chatbotkit/\(distribution)-app@sha256:\(String(repeating: "a", count: 64))\n" : "services: lock").utf8)
+    let a = descriptor(compose), b = descriptor(lock)
+    let (root, registry) = try artifact([b, a], objects: [a.digest: compose, b.digest: lock])
+    let result = try await VerifiedComposeArtifact.load(root: root) { try await registry.fetch($0) }
+    #expect(result.compose == compose && result.lock == lock)
+    #expect(await registry.calls == [root.digest, b.digest, a.digest])
+}
+
 @Test func corruptManifestIsRejectedBeforeDecodingOrFetchingLayers() async throws {
     let bytes = Data("manifest".utf8), root = descriptor(Data("different".utf8))
     let registry = FakeRegistry([root.digest: bytes])

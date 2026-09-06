@@ -11,7 +11,7 @@ import SystemPackage
 enum RuntimeSmokeTest {
     static var requested: Bool {
         // Finder/UI tools may reopen the diagnostic without command-line args.
-        // Its dedicated identity must never start the normal community stack.
+        // Its dedicated identity must never start the normal Studio stack.
         CommandLine.arguments.contains("--runtime-smoke-test") || Bundle.main.bundleIdentifier == "ai.cbk.studio.smoke-test"
     }
     private static func stage(_ message: String) { FileHandle.standardOutput.write(Data("STUDIO_SMOKE_STAGE: \(message)\n".utf8)) }
@@ -25,7 +25,7 @@ enum RuntimeSmokeTest {
         defer { if safeToRemove { try? FileManager.default.removeItem(at: root) } }
         try DiskSafety.require(at: root, additional: 512 * 1_024 * 1_024)
         stage("Verifying the real public Compose artifact")
-        _ = try await OCIComposeLoader.load(reference: "oci://ghcr.io/chatbotkit/platform-community:latest", cacheRoot: root.appendingPathComponent("artifacts"))
+        _ = try await OCIComposeLoader.load(reference: defaultOCIReference, cacheRoot: root.appendingPathComponent("artifacts"))
         stage("Preparing disposable VM images")
         let store = try ImageStore(path: root.appendingPathComponent("images"))
         let initImage = try await store.getInitImage(reference: "ghcr.io/apple/containerization/vminit:0.43.0")

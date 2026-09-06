@@ -5,6 +5,10 @@ import Testing
 
 private let digest = String(repeating: "a", count: 64)
 
+@Test func defaultStackUsesStudioDistribution() {
+    #expect(defaultOCIReference == "oci://ghcr.io/chatbotkit/platform-studio:latest")
+}
+
 @Test func imageLockAcceptsQuotedReferencesAndCRLF() throws {
     let yaml = "services:\r\n  redis:\r\n    image: 'redis@sha256:\(digest)'\r\n"
     #expect(try OCIComposeLoader.parseImageLock(yaml)["redis"] == "redis@sha256:\(digest)")
@@ -28,11 +32,13 @@ private let digest = String(repeating: "a", count: 64)
     }
 }
 
-@Test func imageLockParsesPinnedServices() throws {
-    let yaml = "services:\n  redis:\n    image: docker.io/library/redis@sha256:\(digest)\n  platform:\n    image: ghcr.io/chatbotkit/platform-community-app@sha256:\(digest)\n"
+@Test(arguments: ["platform-studio", "platform-community"])
+func imageLockParsesPinnedServices(_ distribution: String) throws {
+    let yaml = "services:\n  redis:\n    image: docker.io/library/redis@sha256:\(digest)\n  platform:\n    image: ghcr.io/chatbotkit/\(distribution)-app@sha256:\(digest)\n"
     let images = try OCIComposeLoader.parseImageLock(yaml)
     #expect(images.count == 2)
     #expect(images["redis"] == "docker.io/library/redis@sha256:\(digest)")
+    #expect(images["platform"] == "ghcr.io/chatbotkit/\(distribution)-app@sha256:\(digest)")
 }
 
 @Test func imageLockRejectsMutableTags() {
