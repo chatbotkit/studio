@@ -91,17 +91,9 @@ struct UpdatesSettingsView: View {
                     set: { value in updater.setAutomaticDownloads(value) }
                 ))
                 .disabled(!updater.allowsAutomaticUpdates)
-            } footer: {
-                Text("Updates are signed and delivered through GitHub. Save work in the embedded page before installing. Studio waits for stack operations and safely stops its VM before restarting.")
-            }
-
-            if Bundle.main.object(forInfoDictionaryKey: "StudioUpdatesEnabled") as? Bool != true {
-                Text("Updates are disabled in this development build.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             if preparation.waiting {
-                Label("Preparing update: waiting for stack operations or VM shutdown…", systemImage: "clock")
+                Label("Preparing update…", systemImage: "clock")
                     .foregroundStyle(.secondary)
             }
             if let error = preparation.error {

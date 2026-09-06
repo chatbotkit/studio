@@ -122,14 +122,22 @@ struct StorageView: View {
                 }
 
                 Section {
-                    Text("\(report.obsoleteImages.count) obsolete image references, \(report.obsoleteArtifacts.count) artifact directories, and \(size(Int64(report.orphanedBytes))) of currently unreferenced image blobs can be cleaned.")
+                    Text("\(report.obsoleteImages.count + report.obsoleteArtifacts.count) cached items can be removed.")
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("Clean Caches and Restart…") { confirming = true }
-                        .disabled(model.phase.busy || model.storageBusy)
+                    HStack {
+                        Button("Clean Caches and Restart…") { confirming = true }
+                            .disabled(model.phase.busy || model.storageBusy)
+                        Spacer()
+                        if model.storageBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Inspecting Studio storage")
+                        }
+                        Button("Refresh") { model.inspectStorage() }
+                            .disabled(model.phase.busy || model.storageBusy)
+                    }
                 } header: {
                     Text("Cleanup")
-                } footer: {
-                    Text("Shared image layers are reclaimed only when no retained image uses them. Disk sizes are allocated-byte estimates and may count shared APFS blocks more than once. Persistent volumes, backups, and service disks are preserved.")
                 }
             }
 
@@ -141,15 +149,16 @@ struct StorageView: View {
                 }
             }
 
-            Section {
+            if model.storageReport == nil {
                 HStack {
-                    Button("Refresh") { model.inspectStorage() }
-                        .disabled(model.phase.busy || model.storageBusy)
+                    Spacer()
                     if model.storageBusy {
                         ProgressView()
                             .controlSize(.small)
                             .accessibilityLabel("Inspecting Studio storage")
                     }
+                    Button("Refresh") { model.inspectStorage() }
+                        .disabled(model.phase.busy || model.storageBusy)
                 }
             }
         }

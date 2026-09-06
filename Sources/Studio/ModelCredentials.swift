@@ -225,8 +225,6 @@ struct ModelProvidersSettingsView: View {
                 }
             } header: {
                 Text("Providers")
-            } footer: {
-                Text("Choose a provider to add, replace, or remove its credentials.")
             }
 
             Section {
@@ -264,7 +262,7 @@ struct ModelProvidersSettingsView: View {
             } header: {
                 Text(provider.name)
             } footer: {
-                Text(provider.detail + " Saved values stay in Studio’s private platform-data disk and are never displayed again.")
+                Text(provider.detail)
             }
 
             Section {
@@ -290,7 +288,7 @@ struct ModelProvidersSettingsView: View {
 
             if model.info == nil {
                 Section {
-                    Text("Model providers can be configured after Studio’s private platform has started.")
+                    Text("Start Studio to configure model providers.")
                         .foregroundStyle(.secondary)
                 }
             }

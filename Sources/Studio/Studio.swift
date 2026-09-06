@@ -1284,7 +1284,7 @@ final class AppModel: ObservableObject {
             defer { modelCredentialsBusy = false; modelCredentialsTask = nil }
             do {
                 configuredModelCredentialKeys = try await runtime.updateModelCredentials(changes)
-                let notice = "Saved. The platform is reloading its model providers."
+                let notice = "Saved. Changes will be available shortly."
                 modelCredentialsNotice = notice
                 modelCredentialsNoticeTask = Task { @MainActor [weak self] in
                     do { try await Task.sleep(for: .seconds(4)) } catch { return }
