@@ -24,14 +24,9 @@
   [Architecture](docs/architecture.md)
 </div>
 
-<!--
-The approved product screenshot will live at docs/assets/studio-screenshot.png.
-Uncomment this block when the image is added.
-
 <p align="center">
-  <img width="2064" alt="ChatBotKit Studio" src="docs/assets/studio-screenshot.png">
+  <img width="2064" alt="ChatBotKit Studio" src="https://github.com/user-attachments/assets/f9350253-1c01-42d2-826b-a2552542518c" />
 </p>
--->
 
 Studio brings the breadth of the ChatBotKit AI platform to your Mac. Build agents, manage knowledge, connect model providers, and test complete experiences while the platform runs in a private Linux VM owned by the app.
 
