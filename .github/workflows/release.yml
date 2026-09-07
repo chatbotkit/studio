@@ -31,11 +31,14 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           test "$RELEASE_TAG" = "v$version"
           git merge-base --is-ancestor HEAD origin/main
+          bash scripts/release-notes.sh "$version" > "$RUNNER_TEMP/studio-release-notes.md"
           echo "STUDIO_VERSION=$version" >> "$GITHUB_ENV"
           test "$(uname -m)" = arm64
           git lfs fsck
       - name: Run regression tests
-        run: swift test -c release
+        run: |
+          bash scripts/test-release-notes.sh
+          swift test -c release
       - name: Import signing credentials
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
@@ -86,11 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           gh release create "$RELEASE_TAG" \
             "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip" \
             "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip.sha256" \
             "dist/appcast.xml" \
-            --draft --verify-tag --generate-notes --title "Studio $STUDIO_VERSION"
+            --draft --verify-tag --notes-file "$RUNNER_TEMP/studio-release-notes.md" --title "Studio $STUDIO_VERSION"
           gh release edit "$RELEASE_TAG" --draft=false --latest
       - name: Remove temporary signing material
         if: always()

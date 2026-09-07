@@ -29,7 +29,9 @@ jobs:
           git lfs fsck
           for script in scripts/*.sh; do bash -n "$script"; done
       - name: Run regression tests
-        run: swift test -c release
+        run: |
+          bash scripts/test-release-notes.sh
+          swift test -c release
       - name: Build and verify sandboxed app
         run: scripts/build-app.sh
       - name: Package inspection build (not runnable without team signing)

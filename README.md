@@ -67,3 +67,4 @@ Studio does not control an existing Docker or Apple Container installation. It e
 - [Security and privacy](docs/security.md)
 - [Development and testing](docs/development.md)
 - [Release setup](docs/releases.md)
+- [Changelog](CHANGELOG.md)

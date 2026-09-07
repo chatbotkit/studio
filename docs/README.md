@@ -14,6 +14,7 @@ The root [README](../README.md) is the product introduction and installation pat
 
 ## Build and release Studio
 
+- [Changelog](../CHANGELOG.md) — release history and work awaiting the next release.
 - [Development](development.md) — toolchain, builds, tests, signing, and continuous integration.
 - [Release setup](releases.md) — signing keys, notarization, appcast publication, and the release checklist.
 

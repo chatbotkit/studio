@@ -4,6 +4,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(tr -d '[:space:]' < "$repo_root/VERSION")"
 tag="${1:?Usage: package-release.sh vX.Y.Z}"
 [[ "$tag" == "v$version" ]] || { echo 'Release tag must match VERSION.' >&2; exit 1; }
+bash "$repo_root/scripts/release-notes.sh" "$version" >/dev/null
 : "${STUDIO_SIGNING_IDENTITY:?Set a Developer ID Application identity.}"
 : "${APPLE_API_KEY_PATH:?Set the notarization API key path.}"
 : "${APPLE_API_KEY_ID:?Set the notarization key ID.}"

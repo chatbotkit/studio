@@ -7,6 +7,7 @@ version="$(tr -d '[:space:]' < VERSION)"
 [[ "$(git branch --show-current)" == main ]] || { echo 'Release from main.' >&2; exit 1; }
 [[ -z "$(git status --porcelain)" ]] || { echo 'Commit all changes first.' >&2; exit 1; }
 tag="v$version"
+bash "$repo_root/scripts/release-notes.sh" "$version" >/dev/null
 if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
     echo "Tag $tag already exists." >&2; exit 1
 fi

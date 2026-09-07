@@ -1,5 +1,24 @@
 # Studio release setup
 
+## Changelog and version policy
+
+`VERSION` is the canonical application version (`X.Y.Z`). `CHANGELOG.md` is the
+source of truth for user-facing release notes, using Keep a Changelog sections
+and Semantic Versioning. Add each user-visible change to the appropriate heading
+under **Unreleased** in the same commit. `AGENTS.md` documents this requirement
+for future work.
+
+The initial history was reconstructed from commits grouped by the published
+`v0.11.0` through `v0.14.0` tags. Dates use the release publication date in
+Europe/London. Work after `v0.14.0` remains Unreleased; the reconstruction does
+not change existing GitHub releases or tags.
+
+`bash scripts/release-notes.sh X.Y.Z` previews the exact release description. It
+requires exactly one dated `## [X.Y.Z] - YYYY-MM-DD` section containing at least
+one bullet, and excludes Unreleased, other versions, and comparison-link footers.
+Local tagging, release packaging, and CI use the same validator/extractor.
+Run `bash scripts/test-release-notes.sh` when changing this process.
+
 ## Configure once
 
 Add these encrypted Actions secrets to `chatbotkit/studio` (the names match SuperBot). Do not copy private keys into source files or artifacts:
@@ -27,14 +46,15 @@ scripts/verify-app.sh dist/Studio.app
 
 Runnable local builds require a real Apple Development or Developer ID identity because hardened-runtime library validation rejects ad-hoc Sparkle loading. Local packaging automatically selects an available identity, or accepts `STUDIO_SIGNING_IDENTITY`. Certificate-free CI artifacts are explicitly packaging-inspection artifacts, not runnable installations. Release CI imports Developer ID credentials before packaging. No `disable-library-validation` entitlement is granted. The disposable VM script also requires a real local identity and re-signs its copy inside-out with that team.
 
-Verification requires an arm64 executable, hardened runtime, strict code signature verification, and only system-library or bundled Sparkle linkage. These four entitlements must be true:
+Verification requires an arm64 executable, hardened runtime, strict code signature verification, and only system-library or bundled Sparkle linkage. These five entitlements must be true:
 
 - `com.apple.security.app-sandbox`
 - `com.apple.security.network.client`
 - `com.apple.security.network.server`
+- `com.apple.security.device.audio-input`
 - `com.apple.security.virtualization`
 
-The fifth entitlement, `com.apple.security.temporary-exception.mach-lookup.global-name`, contains exactly `ai.cbk.private-oci-stack-spks` and `ai.cbk.private-oci-stack-spki`. The user explicitly approved this installer exception. No other SuperBot exception is copied. Sparkle's Installer.xpc, Autoupdate, Updater.app, and framework are signed inside-out with hardened runtime and the same signing team. Installer tools run outside the sandbox to replace the app; they receive no additional entitlements. The Downloader XPC service is omitted because Studio already has network-client access. The bundled Linux kernel runs inside the VM.
+The sixth entitlement, `com.apple.security.temporary-exception.mach-lookup.global-name`, contains exactly `ai.cbk.private-oci-stack-spks` and `ai.cbk.private-oci-stack-spki`. The user explicitly approved this installer exception. No other SuperBot exception is copied. Sparkle's Installer.xpc, Autoupdate, Updater.app, and framework are signed inside-out with hardened runtime and the same signing team. Installer tools run outside the sandbox to replace the app; they receive no additional entitlements. The Downloader XPC service is omitted because Studio already has network-client access. The bundled Linux kernel runs inside the VM.
 
 ## Update signing and first-release bootstrap
 
@@ -56,7 +76,7 @@ This copies the supplied bundle into a unique temporary directory, assigns the d
 
 Run this on Apple silicon with network access and at least 1 GiB free; allow additional room for temporary downloads and packaging. It is a real VM boundary test, not a full community-stack startup/migration test and not proof that every upstream service honors SIGTERM. It also does not substitute for Developer ID, Gatekeeper, or clean-machine release testing.
 
-## Before the first public release
+## Release checks
 
 - Configure the six secrets and confirm CI is green.
 - Decide whether to retain `ai.cbk.private-oci-stack` as the shipping bundle identifier. It is intentionally unchanged for existing sandbox data; any rename needs a migration plan.
@@ -67,17 +87,40 @@ Run this on Apple silicon with network access and at least 1 GiB free; allow add
 
 ## Publish deliberately
 
-Set `VERSION` to an unused `X.Y.Z`, commit on `main`, then run:
+Only publish when explicitly requested. Prepare the release on `main`:
+
+1. Choose an unused, higher `X.Y.Z` and set `VERSION` to it.
+2. Move the notes being shipped out of Unreleased into a dated
+   `## [X.Y.Z] - YYYY-MM-DD` section. Keep the Unreleased heading and any notes
+   for work that is not shipping. Never reuse a published version.
+3. Update the Unreleased comparison link to start at the new tag and add the
+   new version's comparison link against the previous release.
+4. Preview the description with `bash scripts/release-notes.sh X.Y.Z`, run
+   `bash scripts/test-release-notes.sh` and the development checks above, and
+   commit the version and changelog together.
+5. With a clean worktree, run:
 
 ```sh
 scripts/create-release-tag.sh
 ```
 
-This requires a clean `main`, creates an annotated `vX.Y.Z` tag, and atomically pushes main and the tag. A pushed tag triggers the release workflow; normal main pushes do not publish a release. The workflow validates the version and main ancestry, runs tests, builds with Developer ID and a secure timestamp, checks Apple's Accepted result, staples and validates the ticket, and checks Gatekeeper before publishing:
+This requires a clean `main` and valid dated release notes, creates an annotated
+`vX.Y.Z` tag, and atomically pushes main and the tag. A pushed tag triggers the
+release workflow; normal main pushes do not publish a release. CI validates the
+version, main ancestry, and changelog before importing credentials. It runs
+tests, builds with Developer ID and a secure timestamp, checks Apple's Accepted
+result, staples and validates the ticket, and checks Gatekeeper before publishing:
 
 - `Studio-X.Y.Z-macOS-arm64.zip`
 - `Studio-X.Y.Z-macOS-arm64.zip.sha256`
 - `appcast.xml` (signed Sparkle update feed)
+
+The extracted changelog section becomes the GitHub Release description via
+`--notes-file`; CI does not generate notes from commit titles. The release stays
+a draft until the curated description and all three assets have uploaded, then
+becomes the latest release. Sparkle links to that same release for full notes.
+After publishing, verify the release is public, its assets and description are
+present, and the latest appcast is accessible.
 
 Local notarization is available via `scripts/package-release.sh vX.Y.Z` with `STUDIO_SIGNING_IDENTITY`, `APPLE_API_KEY_PATH`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER_ID` set. It refuses to overwrite an existing release archive. Notarization diagnostics stay in ignored `.release/` and never contain the private key.
 
