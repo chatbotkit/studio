@@ -1235,7 +1235,7 @@ final class AppModel: ObservableObject {
     }
 
     func openInBrowser() {
-        if let url = info?.url { NSWorkspace.shared.open(url) }
+        if let url = EmbeddedWebInspector.shared.currentPageURL { NSWorkspace.shared.open(url) }
     }
 
     func clearLogs() {
@@ -1399,7 +1399,7 @@ final class EmbeddedWebInspector {
     static let shared = EmbeddedWebInspector()
     private let webViews = NSHashTable<WKWebView>.weakObjects()
 
-    private init() {}
+    init() {}
 
     func attach(_ webView: WKWebView) {
         webViews.add(webView)
@@ -1414,6 +1414,10 @@ final class EmbeddedWebInspector {
         return views.first(where: { $0.window === NSApp.keyWindow })
             ?? views.first(where: { $0.window?.isMainWindow == true })
             ?? views.last
+    }
+
+    var currentPageURL: URL? {
+        activeWebView?.url
     }
 
     func reload() {

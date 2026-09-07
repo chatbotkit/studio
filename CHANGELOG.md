@@ -16,6 +16,7 @@ All notable changes to Studio are documented here, following
 
 ### Fixed
 
+- Open the active Studio window’s current page in the browser, preserving its path, query, and fragment instead of returning to the workspace home.
 - Keep the application-menu update command responsive as update availability changes, using native placement below Settings.
 - Keep the startup screen dismissed after the workspace first appears, including during quit, reload, and stack restart.
 
