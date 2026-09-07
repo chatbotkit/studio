@@ -2462,6 +2462,11 @@ struct StudioApp: App {
             .commands { StackCommands(model: model) }
             .commands {
                 CommandGroup(after: .appSettings) { CheckForUpdatesButton() }
+                CommandGroup(replacing: .help) {
+                    Button("Studio Help") {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/chatbotkit/studio")!)
+                    }
+                }
             }
         WindowGroup("Studio", for: StudioPageWindow.self) { $destination in
             if let destination {
