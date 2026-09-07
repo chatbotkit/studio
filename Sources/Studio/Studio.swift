@@ -2366,8 +2366,6 @@ struct LiveLogsView: View {
 struct StackCommands: Commands {
     @ObservedObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
-    @Binding var selectedSettingsTab: StudioSettingsTab
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
@@ -2385,10 +2383,6 @@ struct StackCommands: Commands {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Button("Show Stack Details") { openWindow(id: "stack-details") }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
-            Button("Manage Storage") {
-                selectedSettingsTab = .storage
-                openSettings()
-            }
             Divider()
             Button("Show Web Inspector") { EmbeddedWebInspector.shared.show() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
@@ -2465,7 +2459,7 @@ struct StudioApp: App {
         }
             .windowStyle(.hiddenTitleBar)
             .windowResizability(.contentMinSize)
-            .commands { StackCommands(model: model, selectedSettingsTab: $selectedSettingsTab) }
+            .commands { StackCommands(model: model) }
             .commands {
                 CommandGroup(after: .appSettings) { CheckForUpdatesButton() }
             }

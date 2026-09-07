@@ -14,7 +14,7 @@ Saved secrets are never read back into the native interface. Removing a configur
 
 ## Storage
 
-**Studio → Settings → Storage** shows free disk space and the space allocated to caches, service disks, and persistent data. **Stack → Manage Storage** opens the same screen.
+**Studio → Settings → Storage** shows free disk space and the space allocated to caches, service disks, and persistent data.
 
 Cache cleanup previews what can be reclaimed, asks for confirmation, safely stops the stack, and preserves persistent volumes, backups, and service disks. Shared APFS blocks can make size estimates overlap. Studio also reserves free-space headroom before large image or disk operations, though another application can still consume space while an operation is running.
 

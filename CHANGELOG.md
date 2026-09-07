@@ -8,6 +8,7 @@ All notable changes to Studio are documented here, following
 
 ### Changed
 
+- Remove the redundant Manage Storage command from the Stack menu; storage management remains in Settings.
 - Introduce a download-focused README with an adaptive ChatBotKit icon, product screenshot, and dedicated guides under `docs/`.
 - Use curated changelog entries for release descriptions, with shared validation in local release scripts and CI and ongoing release-note guidance in `AGENTS.md`.
 
