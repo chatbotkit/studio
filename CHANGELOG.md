@@ -8,6 +8,7 @@ All notable changes to Studio are documented here, following
 
 ### Changed
 
+- Group browser commands together in the Stack menu and move Clear Captured Logs below stack details, separated by a divider.
 - Open the Studio GitHub repository in the default browser from Studio Help.
 - Remove the redundant Manage Storage command from the Stack menu; storage management remains in Settings.
 - Introduce a download-focused README with an adaptive ChatBotKit icon, product screenshot, and dedicated guides under `docs/`.

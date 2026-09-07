@@ -2377,12 +2377,14 @@ struct StackCommands: Commands {
         }
         CommandMenu("Stack") {
             Button("Restart Stack") { model.restart() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(model.phase.busy)
-            Button("Open in Browser") { model.openInBrowser() }.disabled(model.info == nil)
             Divider()
             Button("Show Live Logs") { openWindow(id: "live-logs") }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Button("Show Stack Details") { openWindow(id: "stack-details") }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+            Divider()
+            Button("Clear Captured Logs") { model.clearLogs() }
+                .disabled(model.containerLogs.isEmpty)
             Divider()
             Button("Show Web Inspector") { EmbeddedWebInspector.shared.show() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
@@ -2390,9 +2392,7 @@ struct StackCommands: Commands {
             Button("Reload Embedded Page") { EmbeddedWebInspector.shared.reload() }
                 .keyboardShortcut("r", modifiers: [.command, .option])
                 .disabled(model.info == nil)
-            Divider()
-            Button("Clear Captured Logs") { model.clearLogs() }
-                .disabled(model.containerLogs.isEmpty)
+            Button("Open in Browser") { model.openInBrowser() }.disabled(model.info == nil)
         }
     }
 }
