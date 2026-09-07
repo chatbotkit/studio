@@ -3,7 +3,7 @@ import WebKit
 import Testing
 @testable import Studio
 
-@Test func startupSurfaceIsRetiredUntilTheStackIsReplaced() {
+@Test func startupSurfaceIsRetiredForTheWindowLifetime() {
     var reveal = WebPageRevealState()
     #expect(!reveal.hasRevealedPage)
 
@@ -13,8 +13,11 @@ import Testing
     reveal.documentStartedLoading()
     #expect(reveal.hasRevealedPage)
 
-    reveal.stackWasReplaced()
-    #expect(!reveal.hasRevealedPage)
+    // Further documents (including a replacement runtime or retry) must
+    // never re-arm the initial launch cover.
+    reveal.documentStartedLoading()
+    reveal.documentBecameReady()
+    #expect(reveal.hasRevealedPage)
 }
 
 @Test @MainActor func pageTimeoutBecomesRetryableFailure() async throws {

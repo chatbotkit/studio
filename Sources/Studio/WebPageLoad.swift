@@ -13,10 +13,6 @@ struct WebPageRevealState: Equatable {
         // The initial launch surface is a one-shot cover. Once the embedded
         // page has appeared, navigation and reload keep WebKit visible.
     }
-
-    mutating func stackWasReplaced() {
-        hasRevealedPage = false
-    }
 }
 
 @MainActor

@@ -2013,9 +2013,10 @@ struct ContentView: View {
                         Text("The container stack has not been restarted.").font(.caption).foregroundStyle(.secondary)
                     }.padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color(nsColor: StudioBrand.background))
-                } else if !pageReveal.hasRevealedPage {
-                    if case let .failed(message) = model.phase { FailureView(message: message) }
-                    else { StartupView(model: model) }
+                } else if case let .failed(message) = model.phase {
+                    FailureView(message: message)
+                } else if !pageReveal.hasRevealedPage && !model.isShuttingDown {
+                    StartupView(model: model)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2028,7 +2029,8 @@ struct ContentView: View {
             pageBackgroundColor: pageBackgroundColor
         ))
         .onChange(of: model.info?.podID) { _, _ in
-            pageReveal.stackWasReplaced()
+            // Shutdown also clears the pod ID. Retire the launch cover for
+            // this window's lifetime, including quit and explicit restarts.
             pageError = nil
         }
         .task { if !RuntimeSmokeTest.requested { model.start() } }
@@ -2081,7 +2083,6 @@ struct StudioPageView: View {
                             .foregroundStyle(.secondary)
                         Button("Reload") {
                             pageError = nil
-                            pageReveal.stackWasReplaced()
                             reloadID = UUID()
                         }
                     }
