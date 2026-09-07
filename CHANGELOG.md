@@ -6,6 +6,8 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-08
+
 ### Changed
 
 - Group browser commands together in the Stack menu and move Clear Captured Logs below stack details, separated by a divider.
@@ -110,7 +112,8 @@ All notable changes to Studio are documented here, following
 
 - Sandbox the native application and keep the platform runtime private to Studio, with local port forwarding and a bundled Linux kernel.
 
-[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/chatbotkit/studio/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/chatbotkit/studio/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/chatbotkit/studio/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/chatbotkit/studio/compare/v0.11.0...v0.12.0
