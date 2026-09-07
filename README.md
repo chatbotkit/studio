@@ -1,27 +1,33 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/icon-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/icon-light.svg">
-    <img alt="ChatBotKit Studio" src="docs/assets/icon-light.svg" width="96" height="96">
-  </picture>
 
-  <h1>AI Studio in a Box</h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/icon-dark.svg">
+  <img alt="ChatBotKit Studio" src="docs/assets/icon-light.svg" width="60">
+</picture>
 
-  <strong>A complete ChatBotKit workspace running privately<br>inside one native macOS app.</strong>
+<br/>
 
-  <br><br>
+<h1>AI Studio in a Box</h1>
 
-  ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black)
-  ![Apple silicon](https://img.shields.io/badge/Apple-silicon-black)
-  ![Native Swift](https://img.shields.io/badge/native-Swift-black)
-  ![Private runtime](https://img.shields.io/badge/runtime-private-black)
+<p>
+  <strong>A complete ChatBotKit workspace running privately<br>
+  inside one native macOS app.</strong>
+</p>
 
-  <br>
+<p>
+  <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-%E2%89%A526-0a0a0a?style=flat-square&logo=apple&logoColor=white">
+  <img alt="Apple silicon" src="https://img.shields.io/badge/Apple-silicon-0a0a0a?style=flat-square&logo=apple&logoColor=white">
+  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-0a0a0a?style=flat-square&logo=swift&logoColor=white">
+  <img alt="Private runtime" src="https://img.shields.io/badge/runtime-private-0a0a0a?style=flat-square&logo=apple&logoColor=white">
+</p>
 
-  [Download Studio](https://github.com/chatbotkit/studio/releases/latest) ·
-  [Get started](docs/getting-started.md) ·
-  [Documentation](docs/README.md) ·
-  [Architecture](docs/architecture.md)
+<p>
+  <a href="https://github.com/chatbotkit/studio/releases/latest"><strong>Download Studio</strong></a> ·
+  <a href="./docs/getting-started.md"><strong>Get started</strong></a> ·
+  <a href="./docs/README.md"><strong>Documentation</strong></a> ·
+  <a href="./docs/architecture.md"><strong>Architecture</strong></a>
+</p>
+
 </div>
 
 <p align="center">
