@@ -36,6 +36,12 @@ uploaded automatically, and diagnostics require no additional entitlements.
 
 ## Embedded web content
 
+Studio adds App Transport Security HTTP exceptions only for the exact
+`cbk-apps.localhost` and `cbk-labs.localhost` names through [per-domain exceptions](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
+These local services do not use TLS. The exceptions do not include subdomains or
+disable ATS for other web content. Packaging verifies the complete policy; no
+sandbox entitlements are added for these exceptions.
+
 The local platform is treated as Studio's trusted application origin. Same-origin new-window requests open in another Studio window; external destinations open in the default browser. WebKit still controls user-activation and page security rules.
 
 Microphone use is automatically accepted at the page layer only for the trusted local origin. macOS continues to present and enforce Studio's system privacy permission.

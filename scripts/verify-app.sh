@@ -32,6 +32,7 @@ test -s "$app/Contents/Resources/Runtime/vmlinux-arm64"
 test -s "$app/Contents/Resources/Studio.icns"
 test -s "$app/Contents/Resources/Notices/Yams-LICENSE.txt"
 plutil -lint "$app/Contents/Info.plist"
+swift "$(dirname "${BASH_SOURCE[0]}")/verify-web-transport.swift" "$app/Contents/Info.plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$app/Contents/Info.plist")" == \
     'Studio uses your microphone when you start a voice conversation.' ]] || {
     echo 'Missing or unexpected microphone usage description.' >&2; exit 1;

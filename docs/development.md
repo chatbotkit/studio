@@ -37,6 +37,22 @@ swift test -c release
 
 The regression suite covers lifecycle ownership, shutdown and recovery, probes, configuration expansion, OCI validation, storage cleanup, log streaming, native console selection, listener completion, windows and external links, page confirmations, and updater behavior without starting the full stack.
 
+Packaging checks the complete local HTTP exception policy. To test its rejection
+cases and exercise the packaged policy in real WebKit processes, run:
+
+```sh
+swift scripts/verify-web-transport.swift --self-test
+bash scripts/test-web-transport.sh dist/Studio.app
+```
+
+The WebKit smoke test uses hidden, separately signed probe apps, an ephemeral
+loopback HTTP fixture, and nonpersistent web data. It reproduces the ATS failure
+without the policy, verifies Apps and Labs load with it, and checks an unlisted
+hostname remains blocked. The probes have only sandbox and client/server network
+entitlements; they neither launch Studio's VM nor access its workspace. Evidence
+is retained in the temporary directory printed by the script. This test requires
+a logged-in macOS GUI session and is separate from headless CI policy checks.
+
 The [September stability audit](audit-2026-09-05.md) records the original findings and remediation status. A full VM startup remains a separate local smoke test because hosted runners do not guarantee nested virtualization.
 
 ## Generated and private data

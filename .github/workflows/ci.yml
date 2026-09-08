@@ -31,6 +31,7 @@ jobs:
       - name: Run regression tests
         run: |
           bash scripts/test-release-notes.sh
+          swift scripts/verify-web-transport.swift --self-test
           swift test -c release
       - name: Build and verify sandboxed app
         run: scripts/build-app.sh
