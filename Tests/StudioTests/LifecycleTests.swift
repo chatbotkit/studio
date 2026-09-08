@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import StudioDiagnostics
 @testable import Studio
 
 private actor ShutdownRecorder {
@@ -146,12 +147,33 @@ private actor FakeStackRuntime: StackRuntime {
     func releaseStart() { holdStart = false; startGate?.resume(); startGate = nil }
     func releaseStop() { holdStop = false; stopGate?.resume(); stopGate = nil }
     func emitOldEvent() async { await callbacks.first?(.phase(.failed("stale callback"))) }
+    func emitLog() async { await callbacks.last?(.containerLines("platform", ["fixture service output"])) }
     var startWaiting: Bool { startGate != nil }
     var stopWaiting: Bool { stopGate != nil }
 }
 
 @MainActor private func fixture(_ runtime: FakeStackRuntime) -> AppModel {
     AppModel(runtime: runtime, resources: { (URL(filePath: "/unused-kernel"), URL(filePath: "/unused-data")) })
+}
+
+@Test @MainActor func modelPersistsServiceOutputAndLifecycleWithoutTouchingRealData() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let runtime = FakeStackRuntime()
+    let model = AppModel(runtime: runtime, diagnostics: try DiagnosticLog(directory: directory), resources: {
+        (URL(filePath: "/unused-kernel"), URL(filePath: "/unused-data"))
+    })
+    model.start()
+    try await eventually { model.info != nil }
+    await runtime.emitLog()
+    model.clearLogs()
+    #expect(model.containerLogs.isEmpty)
+    #expect(await model.shutdown())
+    let saved = try String(contentsOf: directory.appendingPathComponent("current.jsonl"), encoding: .utf8)
+    #expect(saved.contains("fixture service output"))
+    #expect(saved.contains("Workspace ready"))
+    #expect(saved.contains("Shutdown started"))
+    #expect(saved.contains("Shutdown completed"))
 }
 
 @MainActor private func eventually(_ condition: @MainActor () async -> Bool) async throws {

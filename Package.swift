@@ -19,6 +19,7 @@ let package = Package(
             name: "Studio",
             dependencies: [
                 "StudioConfiguration",
+                "StudioDiagnostics",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationEXT4", package: "containerization"),
@@ -35,7 +36,13 @@ let package = Package(
             ]
         ),
         .target(name: "StudioConfiguration", dependencies: [.product(name: "Yams", package: "Yams")]),
+        .target(name: "StudioDiagnostics"),
+        // Test-only subprocess: never copied into Studio.app.
+        .executableTarget(name: "StudioCrashProbe", dependencies: [
+            "StudioDiagnostics", .product(name: "ContainerizationOS", package: "containerization")
+        ], path: "Tests/CrashProbe"),
+        .testTarget(name: "StudioDiagnosticsTests", dependencies: ["StudioDiagnostics"]),
         .testTarget(name: "StudioConfigurationTests", dependencies: ["StudioConfiguration"], resources: [.copy("Fixtures")]),
-        .testTarget(name: "StudioTests", dependencies: ["Studio"])
+        .testTarget(name: "StudioTests", dependencies: ["Studio", "StudioDiagnostics"])
     ]
 )

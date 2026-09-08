@@ -18,11 +18,21 @@ Sparkle's signed Installer XPC service, Autoupdate, and Updater components opera
 
 Containerization is linked into the sandboxed application and the bundled Linux kernel boots inside Studio's VM. Host listeners use loopback addresses only. Studio neither depends on nor controls another installed container runtime.
 
+Studio ignores `SIGPIPE` before starting runtime workers so a disconnected socket
+returns `EPIPE` to Containerization's existing relay error handling instead of
+terminating the app. Other signals are unchanged. The regression-only
+`StudioCrashProbe` executable is not bundled or granted application entitlements.
+
 ## Data and credentials
 
 Runtime data lives in Studio's Application Support area. Model provider credentials are atomically saved as an owner-only configuration file inside the existing `platform-data` disk. The native UI can determine whether a provider is configured but never reads a saved secret back for display.
 
 Cache cleanup preserves persistent volumes, backups, and service disks. If Studio cannot determine the last-known-good image set, it retains image references rather than deleting uncertain data.
+
+Saved [diagnostic logs](operations.md#logs-and-troubleshooting) remain inside the
+sandbox, with owner-only permissions and a 4 MiB retention limit. Service output
+is not guaranteed to be secret-free; review it before sharing. Logs are not
+uploaded automatically, and diagnostics require no additional entitlements.
 
 ## Embedded web content
 

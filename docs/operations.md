@@ -30,6 +30,32 @@ The Stack menu provides:
 
 Page failures and WebKit process termination offer a page-only reload first.
 
+Studio also saves the captured service output, runtime events, and app start/shutdown
+markers inside its private sandbox, at:
+
+```text
+~/Library/Containers/ai.cbk.private-oci-stack/Data/Library/Logs/Studio/
+```
+
+Use Finder's **Go → Go to Folder** to open that location. `current.jsonl` is the
+latest log; `previous-1.jsonl` through `previous-3.jsonl` contain older output.
+Each file is limited to 1 MiB (4 MiB total), is readable only by your macOS user,
+and survives app restarts. Records include a timestamp, process ID, source, and
+message. Logging stops for the current launch if the disk is full or inaccessible;
+this does not stop the workspace. Simultaneous app instances may skip records
+while another instance rotates/writes the shared files.
+
+Logs contain service output, which may include personal content or credentials
+printed by the platform. Inspect and redact them before sharing. Studio does not
+add HTTP request bodies, cookies, or provider credential values to diagnostics.
+**Clear Captured Logs** clears the live view only; to remove saved diagnostics,
+quit Studio and delete the files in this log folder. Do not delete the Runtime
+folder, which contains your workspace data.
+
+These are diagnostic logs, not a full crash recorder: output still pending in a
+service or the app's event queue may be lost on abrupt termination. macOS Console
+can provide complementary process-exit and WebKit diagnostics.
+
 ## Unsaved changes
 
 Pages that register a browser `beforeunload` handler receive a native **Stay on Page** / **Leave Page** confirmation for navigation and reload. Studio does not guess whether arbitrary forms are dirty, and in-page routers must provide their own navigation guard. Forced termination, crashes, stack restart, and native app quit cannot always show this warning.

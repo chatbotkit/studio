@@ -10,6 +10,7 @@ import Foundation
 import Network
 import SwiftUI
 import StudioConfiguration
+import StudioDiagnostics
 import SystemPackage
 import WebKit
 
@@ -489,6 +490,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
     private var storageLease: RuntimeStorageLease?
 
     func start(kernelURL: URL, dataRoot: URL, event: @escaping @MainActor @Sendable (RuntimeEvent) -> Void) async throws -> StackInfo {
+        ProcessSafety.installBrokenPipeProtection()
         guard !starting else { throw AppRuntimeError("The private stack is already starting.") }
         starting = true
         defer { starting = false }
@@ -1122,7 +1124,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
 
 @MainActor
 final class AppModel: ObservableObject {
-    static let shared = AppModel()
+    static let shared = AppModel(diagnostics: DiagnosticLog.makeDefault())
     @Published private(set) var phase: StackPhase = .idle
     @Published private(set) var services = Dictionary(uniqueKeysWithValues: serviceNames.map { ($0, ServicePhase.pending) })
     @Published private(set) var events = ["OCI source: \(defaultOCIReference)", "Runtime is private to this app"]
@@ -1140,6 +1142,7 @@ final class AppModel: ObservableObject {
     private var modelCredentialsTask: Task<Void, Never>?
     private var modelCredentialsNoticeTask: Task<Void, Never>?
     private let runtime: any StackRuntime
+    private let diagnostics: DiagnosticLog?
     private let resources: @MainActor () throws -> (kernel: URL, data: URL)
     private var task: Task<Void, Never>?
     private var shutdownTask: Task<Bool, Never>?
@@ -1149,6 +1152,7 @@ final class AppModel: ObservableObject {
 
     init(
         runtime: any StackRuntime = PrivateOCIStackRuntime(),
+        diagnostics: DiagnosticLog? = nil,
         resources: @escaping @MainActor () throws -> (kernel: URL, data: URL) = {
             guard let kernel = Bundle.main.url(forResource: "vmlinux-arm64", withExtension: nil, subdirectory: "Runtime") else {
                 throw AppRuntimeError("The bundled Linux kernel is missing.")
@@ -1157,7 +1161,9 @@ final class AppModel: ObservableObject {
         }
     ) {
         self.runtime = runtime
+        self.diagnostics = diagnostics
         self.resources = resources
+        diagnostics?.append(source: "app", message: "Studio \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development") started")
     }
 
     var info: StackInfo? {
@@ -1172,7 +1178,7 @@ final class AppModel: ObservableObject {
         phase = .resolving
         generation = UUID()
         let run = generation
-        containerLogs.append(.init(service: "runtime", message: "—— starting \(defaultOCIReference) ——"))
+        appendContainerLines(service: "runtime", lines: ["—— starting \(defaultOCIReference) ——"])
         services = Dictionary(uniqueKeysWithValues: serviceNames.map { ($0, .pending) })
         events = ["OCI source: \(defaultOCIReference)", "Runtime is private to this app"]
         startupProgress = 0
@@ -1189,6 +1195,7 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 guard generation == run else { return }
                 phase = .ready(info)
+                diagnostics?.append(source: "app", message: "Workspace ready")
             } catch is CancellationError {
                 if generation == run { phase = .idle }
             } catch {
@@ -1302,6 +1309,7 @@ final class AppModel: ObservableObject {
 
     func shutdown() async -> Bool {
         if let shutdownTask { return await shutdownTask.value }
+        diagnostics?.append(source: "app", message: "Shutdown started")
         isShuttingDown = true
         generation = UUID()
         phase = .stopping
@@ -1325,6 +1333,7 @@ final class AppModel: ObservableObject {
                 services = services.mapValues { _ in .stopped }
                 phase = .idle
                 hasCompletedShutdown = true
+                diagnostics?.append(source: "app", message: "Shutdown completed")
                 return true
             } catch {
                 phase = .failed(error.localizedDescription)
@@ -1366,12 +1375,14 @@ final class AppModel: ObservableObject {
             $0.replacingOccurrences(of: ansiPattern, with: "", options: .regularExpression)
         }.filter { !$0.isEmpty }
         containerLogs.append(contentsOf: clean.map { .init(service: service, message: $0) })
+        for line in clean { diagnostics?.append(source: service, message: line) }
         if containerLogs.count > 8_000 {
             containerLogs.removeFirst(containerLogs.count - 8_000)
         }
     }
 
     private func append(_ message: String) {
+        diagnostics?.append(source: "runtime", message: message)
         events.append("\(Date.now.formatted(date: .omitted, time: .standard))  \(message)")
         if events.count > 80 { events.removeFirst(events.count - 80) }
     }
@@ -2457,6 +2468,9 @@ struct StudioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel.shared
     @SwiftUI.State private var selectedSettingsTab = StudioSettingsTab.models
+    init() {
+        ProcessSafety.installBrokenPipeProtection()
+    }
     var body: some Scene {
         Window("Studio", id: "main") {
             ContentView(model: model).tint(Color(nsColor: StudioBrand.foreground))

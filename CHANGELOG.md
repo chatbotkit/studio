@@ -6,6 +6,14 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent disconnected browser connections from terminating Studio with a broken-pipe signal from the private container relay.
+
+### Added
+
+- Keep bounded, private diagnostic logs across app exits to help investigate startup, service, and shutdown failures.
+
 ## [0.14.2] - 2026-09-08
 
 ### Changed
