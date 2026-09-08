@@ -1245,6 +1245,11 @@ final class AppModel: ObservableObject {
         if let url = EmbeddedWebInspector.shared.currentPageURL { NSWorkspace.shared.open(url) }
     }
 
+    func pageWindow(for destination: WorkspaceDestination) -> StudioPageWindow? {
+        guard let info, let url = destination.url(port: Int(info.publishedPort)) else { return nil }
+        return StudioPageWindow(url: url)
+    }
+
     func clearLogs() {
         containerLogs.removeAll(keepingCapacity: true)
     }
@@ -2408,6 +2413,14 @@ struct StackCommands: Commands {
                 .keyboardShortcut("r", modifiers: [.command, .option])
                 .disabled(model.info == nil)
             Button("Open in Browser") { model.openInBrowser() }.disabled(model.info == nil)
+            Divider()
+            ForEach(WorkspaceDestination.allCases, id: \.self) { destination in
+                Button(destination.menuTitle) {
+                    guard let page = model.pageWindow(for: destination) else { return }
+                    openWindow(value: page)
+                }
+                .disabled(model.info == nil)
+            }
         }
     }
 }

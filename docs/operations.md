@@ -6,6 +6,10 @@ Studio can open multiple native windows over one running platform. **File → Ne
 
 Links targeting a new window remain inside Studio when they belong to the local platform origin. External links open in the default browser.
 
+**Stack → Open Labs** and **Stack → Open Apps** open their respective workspaces
+in separate Studio windows, sharing the existing stack. These shortcuts become
+available once the stack is ready and use its active port (normally 3000).
+
 ## Model providers
 
 **Studio → Settings → Models** configures platform-wide credentials for OpenAI, OpenRouter, Vercel AI Gateway, Google AI, Amazon Bedrock, Cloudflare Workers AI, Perplexity, Mistral, Groq, and DeepSeek.

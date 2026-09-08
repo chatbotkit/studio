@@ -12,6 +12,7 @@ All notable changes to Studio are documented here, following
 
 ### Added
 
+- Add Open Labs and Open Apps shortcuts to the Stack menu, opening separate Studio windows over the running platform.
 - Keep bounded, private diagnostic logs across app exits to help investigate startup, service, and shutdown failures.
 
 ## [0.14.2] - 2026-09-08

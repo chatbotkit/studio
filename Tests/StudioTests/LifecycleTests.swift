@@ -156,6 +156,25 @@ private actor FakeStackRuntime: StackRuntime {
     AppModel(runtime: runtime, resources: { (URL(filePath: "/unused-kernel"), URL(filePath: "/unused-data")) })
 }
 
+@Test @MainActor func workspaceShortcutsReuseTheStackAndRequireItToBeReady() async throws {
+    let runtime = FakeStackRuntime()
+    let model = fixture(runtime)
+    #expect(model.pageWindow(for: .labs) == nil)
+    #expect(model.pageWindow(for: .apps) == nil)
+    model.start()
+    try await eventually { model.info != nil }
+    let labs = try #require(model.pageWindow(for: .labs))
+    let apps = try #require(model.pageWindow(for: .apps))
+    #expect(labs.url.absoluteString == "http://cbk-labs.localhost:3000/")
+    #expect(apps.url.absoluteString == "http://cbk-apps.localhost:3000/")
+    #expect(labs.id != apps.id)
+    #expect(model.pageWindow(for: .labs)?.id != labs.id)
+    #expect(await runtime.starts == 1)
+    #expect(await model.shutdown())
+    #expect(model.pageWindow(for: .labs) == nil)
+    #expect(model.pageWindow(for: .apps) == nil)
+}
+
 @Test @MainActor func modelPersistsServiceOutputAndLifecycleWithoutTouchingRealData() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
