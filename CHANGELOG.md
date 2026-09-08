@@ -6,9 +6,7 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
-### Changed
-
-- Rename the settings tab to Update and place Open Apps before Open Labs in the Stack menu.
+## [0.14.3] - 2026-09-08
 
 ### Fixed
 
@@ -18,6 +16,10 @@ All notable changes to Studio are documented here, following
 
 - Add Open Labs and Open Apps shortcuts to the Stack menu, opening separate Studio windows over the running platform.
 - Keep bounded, private diagnostic logs across app exits to help investigate startup, service, and shutdown failures.
+
+### Changed
+
+- Rename the settings tab to Update and place Open Apps before Open Labs in the Stack menu.
 
 ## [0.14.2] - 2026-09-08
 
@@ -132,7 +134,8 @@ All notable changes to Studio are documented here, following
 
 - Sandbox the native application and keep the platform runtime private to Studio, with local port forwarding and a bundled Linux kernel.
 
-[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.2...HEAD
+[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.3...HEAD
+[0.14.3]: https://github.com/chatbotkit/studio/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/chatbotkit/studio/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/chatbotkit/studio/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/chatbotkit/studio/compare/v0.13.0...v0.14.0
