@@ -77,3 +77,8 @@ Studio does not control an existing Docker or Apple Container installation. It e
 - [Development and testing](docs/development.md)
 - [Release setup](docs/releases.md)
 - [Changelog](CHANGELOG.md)
+
+## License
+
+Studio is licensed under the [Apache License, Version 2.0](LICENSE). See
+[NOTICE](NOTICE) for attribution. Third-party components retain their own licenses.

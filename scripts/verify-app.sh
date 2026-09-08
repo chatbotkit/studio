@@ -31,6 +31,10 @@ done < <(otool -L "$binary" | awk '/^\t/ {print $1}')
 test -s "$app/Contents/Resources/Runtime/vmlinux-arm64"
 test -s "$app/Contents/Resources/Studio.icns"
 test -s "$app/Contents/Resources/Notices/Yams-LICENSE.txt"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+for notice in LICENSE NOTICE; do
+    cmp "$repo_root/$notice" "$app/Contents/Resources/Notices/$notice"
+done
 plutil -lint "$app/Contents/Info.plist"
 swift "$(dirname "${BASH_SOURCE[0]}")/verify-web-transport.swift" "$app/Contents/Info.plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$app/Contents/Info.plist")" == \
