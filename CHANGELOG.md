@@ -6,6 +6,8 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-09-08
+
 ### Changed
 
 - Highlight the full server-side ChatBotKit Platform in the README, with prominent installation and deployment links.
@@ -117,7 +119,8 @@ All notable changes to Studio are documented here, following
 
 - Sandbox the native application and keep the platform runtime private to Studio, with local port forwarding and a bundled Linux kernel.
 
-[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.2...HEAD
+[0.14.2]: https://github.com/chatbotkit/studio/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/chatbotkit/studio/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/chatbotkit/studio/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/chatbotkit/studio/compare/v0.12.0...v0.13.0
