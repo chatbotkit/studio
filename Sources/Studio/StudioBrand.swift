@@ -2,8 +2,16 @@ import AppKit
 import SwiftUI
 
 enum StudioBrand {
-    static let background = NSColor(name: "StudioBackground") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .black : .white
+    // Match Platform's canvas in sRGB before the page supplies its own colors.
+    // This remains dynamic so native surfaces follow appearance changes.
+    static let background = surface("StudioBackground", dark: 0x18, light: .white)
+
+    private static func surface(_ name: String, dark: Int, light: NSColor) -> NSColor {
+        NSColor(name: name) { appearance in
+            guard appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua else { return light }
+            let component = CGFloat(dark) / 255
+            return NSColor(srgbRed: component, green: component, blue: component, alpha: 1)
+        }
     }
     static let foreground = NSColor(name: "StudioForeground") { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .white : .black

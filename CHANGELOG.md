@@ -6,6 +6,10 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Changed
+
+- Match the window and title-bar fallback to Platform’s charcoal canvas in dark mode, while continuing to follow the loaded page’s own colors.
+
 ## [0.14.1] - 2026-09-08
 
 ### Changed

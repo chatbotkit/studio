@@ -1463,7 +1463,7 @@ struct EmbeddedWebView: NSViewRepresentable {
         private var themeColorObservation: NSKeyValueObservation?
         private var underPageColorObservation: NSKeyValueObservation?
         private var sampledTopEdgeColor: NSColor?
-        private var derivedPageBackgroundColor = NSColor.windowBackgroundColor
+        private var derivedPageBackgroundColor = StudioBrand.background
         private var appearanceIsDark: Bool?
         private var appearanceSampleTask: Task<Void, Never>?
         private var lastTopLeft: NSColor?
@@ -1511,7 +1511,7 @@ struct EmbeddedWebView: NSViewRepresentable {
             sampledTopEdgeColor = nil
             webView.underPageBackgroundColor = nil
             derivedPageBackgroundColor = webView.underPageBackgroundColor
-                ?? NSColor.windowBackgroundColor
+                ?? StudioBrand.background
             publishColors(from: webView)
         }
 
@@ -1578,7 +1578,7 @@ struct EmbeddedWebView: NSViewRepresentable {
             stopColorObservation()
             observedWebView = webView
             derivedPageBackgroundColor = webView.underPageBackgroundColor
-                ?? NSColor.windowBackgroundColor
+                ?? StudioBrand.background
             themeColorObservation = webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] webView, _ in
                 Task { @MainActor [weak self, weak webView] in
                     if let self, let webView { self.publishColors(from: webView) }
@@ -1589,7 +1589,7 @@ struct EmbeddedWebView: NSViewRepresentable {
                     guard let self, let webView else { return }
                     if self.sampledTopEdgeColor == nil {
                         self.derivedPageBackgroundColor = webView.underPageBackgroundColor
-                            ?? NSColor.windowBackgroundColor
+                            ?? StudioBrand.background
                     }
                     self.publishColors(from: webView)
                 }
@@ -1973,8 +1973,8 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @SwiftUI.State private var pageReveal = WebPageRevealState()
     @SwiftUI.State private var pageError: String?
-    @SwiftUI.State private var pageThemeColor = NSColor.windowBackgroundColor
-    @SwiftUI.State private var pageBackgroundColor = NSColor.windowBackgroundColor
+    @SwiftUI.State private var pageThemeColor = StudioBrand.background
+    @SwiftUI.State private var pageBackgroundColor = StudioBrand.background
 
     init(model: AppModel) {
         self.model = model
@@ -2047,8 +2047,8 @@ struct StudioPageView: View {
     @Environment(\.openWindow) private var openWindow
     @SwiftUI.State private var pageReveal = WebPageRevealState()
     @SwiftUI.State private var pageError: String?
-    @SwiftUI.State private var pageThemeColor = NSColor.windowBackgroundColor
-    @SwiftUI.State private var pageBackgroundColor = NSColor.windowBackgroundColor
+    @SwiftUI.State private var pageThemeColor = StudioBrand.background
+    @SwiftUI.State private var pageBackgroundColor = StudioBrand.background
     @SwiftUI.State private var reloadID = UUID()
 
     var body: some View {
