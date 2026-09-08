@@ -23,6 +23,7 @@
 
 <p>
   <a href="https://github.com/chatbotkit/studio/releases/latest"><strong>Download Studio</strong></a> ·
+  <a href="https://github.com/chatbotkit/platform#run-it"><strong>Deploy Platform</strong></a> ·
   <a href="./docs/getting-started.md"><strong>Get started</strong></a> ·
   <a href="./docs/README.md"><strong>Documentation</strong></a> ·
   <a href="./docs/architecture.md"><strong>Architecture</strong></a>
@@ -34,9 +35,17 @@
   <img width="2064" alt="ChatBotKit Studio" src="https://github.com/user-attachments/assets/f9350253-1c01-42d2-826b-a2552542518c" />
 </p>
 
-Studio brings the breadth of the ChatBotKit AI platform to your Mac. Build agents, manage knowledge, connect model providers, and test complete experiences while the platform runs in a private Linux VM owned by the app.
+Studio brings the breadth of the [ChatBotKit Platform](https://github.com/chatbotkit/platform) to your Mac. Build agents, manage knowledge, connect model providers, and test complete experiences while the platform runs in a private Linux VM owned by the app.
 
 No Docker setup. No separate container command. Open Studio and start building.
+
+## Build locally. Run the full platform on your servers.
+
+Studio is an easy way to explore and build with ChatBotKit on your Mac. The bigger benefit is the **complete server-side Platform**: run AI behind your products and internal systems, serve your team, and keep control of your infrastructure and data.
+
+For shared deployments, install [ChatBotKit Platform](https://github.com/chatbotkit/platform). It brings together the agent runtime, model gateway, knowledge, integrations, APIs, and access controls in a stack you operate.
+
+**[Install the complete Platform →](https://github.com/chatbotkit/platform#run-it)** · [Server deployment guide](https://github.com/chatbotkit/platform/blob/main/docs/deployment.md)
 
 ## One app. A complete AI workspace.
 

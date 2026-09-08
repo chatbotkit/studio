@@ -8,6 +8,7 @@ All notable changes to Studio are documented here, following
 
 ### Changed
 
+- Highlight the full server-side ChatBotKit Platform in the README, with prominent installation and deployment links.
 - Match the window and title-bar fallback to Platform’s charcoal canvas in dark mode, while continuing to follow the loaded page’s own colors.
 
 ## [0.14.1] - 2026-09-08
