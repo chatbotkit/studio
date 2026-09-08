@@ -30,7 +30,7 @@ struct StudioSettingsView: View {
 
             UpdatesSettingsView()
                 .tabItem {
-                    Label("Updates", systemImage: "arrow.triangle.2.circlepath")
+                    Label("Update", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .tag(StudioSettingsTab.updates)
         }

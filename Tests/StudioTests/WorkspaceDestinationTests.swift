@@ -2,6 +2,7 @@ import Testing
 @testable import Studio
 
 @Test func workspaceShortcutsUseDedicatedHostsAtTheirRoots() {
+    #expect(WorkspaceDestination.allCases.map(\.menuTitle) == ["Open Apps", "Open Labs"])
     #expect(WorkspaceDestination.labs.menuTitle == "Open Labs")
     #expect(WorkspaceDestination.apps.menuTitle == "Open Apps")
     #expect(WorkspaceDestination.labs.url(port: 3000)?.absoluteString == "http://cbk-labs.localhost:3000/")

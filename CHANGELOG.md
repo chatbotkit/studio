@@ -6,6 +6,10 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Changed
+
+- Rename the settings tab to Update and place Open Apps before Open Labs in the Stack menu.
+
 ### Fixed
 
 - Prevent disconnected browser connections from terminating Studio with a broken-pipe signal from the private container relay.

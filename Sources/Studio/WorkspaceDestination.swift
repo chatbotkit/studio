@@ -1,8 +1,8 @@
 import Foundation
 
 enum WorkspaceDestination: CaseIterable {
-    case labs
     case apps
+    case labs
 
     var menuTitle: String {
         switch self {
