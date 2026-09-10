@@ -1,5 +1,8 @@
 # Compose environment correction — 2026-09-06
 
+This records the original correction. For the current manifest-based addressing
+contract and updated fixtures, see [endpoint manifest validation](endpoint-manifest-validation.md).
+
 The native adapter previously loaded digest-pinned images but replaced their
 Compose environment with an old Community-specific dictionary. Changing the OCI
 URL alone therefore omitted `NEXTAUTH_TRUSTED_SIGNIN`, current storage variables,

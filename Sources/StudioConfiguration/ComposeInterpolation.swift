@@ -123,7 +123,15 @@ public enum ComposeInterpolation {
 }
 
 public enum GarageConfiguration {
-    public static func extract(from yaml: String) throws -> String {
+    public struct Resolved: Equatable, Sendable {
+        public let configuration: String
+        public let s3Port: UInt16
+    }
+
+    public static func extract(from yaml: String, variables: [String: String]) throws -> Resolved {
+        guard let requested = variables["STORAGE_PORT"], let storagePort = UInt16(requested), storagePort > 0 else {
+            throw ConfigurationError("Garage configuration requires an allocated STORAGE_PORT.")
+        }
         let lines = yaml.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         func endOfBlock(after index: Int, indent: Int) -> Int {
             lines.indices.dropFirst(index + 1).first { index in
@@ -151,20 +159,25 @@ public enum GarageConfiguration {
             if !line.trimmingCharacters(in: .whitespaces).isEmpty, indent < 6 { break }
             collected.append(indent >= 6 ? String(line.dropFirst(6)) : "")
         }
-        let resolved = try ComposeInterpolation.resolve(collected.joined(separator: "\n") + "\n")
-        // The current stack adapter uses these fixed internal ports everywhere
-        // (health checks and service URLs). Reject incompatible artifacts early.
-        for (section, port) in [("s3_api", 3900), ("admin", 3903)] {
+        let resolved = try ComposeInterpolation.resolve(collected.joined(separator: "\n") + "\n", variables: variables)
+        var s3Port: UInt16?
+        for section in ["s3_api", "admin"] {
             let sectionPattern = "(?ms)^\\[\(section)\\][^\\[]*?^api_bind_addr\\s*=\\s*\"([^\"]+)\""
             let regex = try NSRegularExpression(pattern: sectionPattern)
             let range = NSRange(resolved.startIndex..., in: resolved)
-            guard let match = regex.firstMatch(in: resolved, range: range),
+            let matches = regex.matches(in: resolved, range: range)
+            guard matches.count == 1, let match = matches.first,
                   let addressRange = Range(match.range(at: 1), in: resolved),
+                  let portText = resolved[addressRange].split(separator: ":").last,
+                  let port = UInt16(portText), port > 0,
                   ["[::]:\(port)", "0.0.0.0:\(port)", "127.0.0.1:\(port)"].contains(String(resolved[addressRange])) else {
-                throw ConfigurationError("Garage configuration: \(section).api_bind_addr must use internal port \(port) with a supported bind address.")
+                throw ConfigurationError("Garage configuration: \(section).api_bind_addr must use a valid port with a supported bind address.")
             }
+            if section == "admin", port != 3903 { throw ConfigurationError("Garage configuration: admin.api_bind_addr must use internal port 3903 with a supported bind address.") }
+            if section == "s3_api" { s3Port = port }
         }
-        return resolved
+        guard s3Port == storagePort else { throw ConfigurationError("Garage S3 port does not match the allocated STORAGE_PORT.") }
+        return Resolved(configuration: resolved, s3Port: storagePort)
     }
 }
 

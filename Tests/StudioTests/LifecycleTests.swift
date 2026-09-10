@@ -133,7 +133,7 @@ private actor FakeStackRuntime: StackRuntime {
         if holdStart { await withCheckedContinuation { startGate = $0 } }
         starting = false
         // Deliberately ignore cancellation, like a dependency completing late.
-        return StackInfo(url: URL(string: "http://127.0.0.1:3000")!, podID: "fixture-\(starts)", dataRoot: "/unused", sourceReference: "fixture", resolvedDigest: "fixture", composeYAML: "", publishedPort: 3000)
+        return StackInfo(url: URL(string: "http://127.0.0.1:31000")!, podID: "fixture-\(starts)", dataRoot: "/unused", sourceReference: "fixture", resolvedDigest: "fixture", composeYAML: "", publishedPort: 31000, manifest: try testStackManifest())
     }
 
     func stop() async throws -> [String] {
@@ -194,8 +194,8 @@ private actor FakeStackRuntime: StackRuntime {
     try await eventually { model.info != nil }
     let labs = try #require(model.pageWindow(for: .labs))
     let apps = try #require(model.pageWindow(for: .apps))
-    #expect(labs.url.absoluteString == "http://cbk-labs.localhost:3000/")
-    #expect(apps.url.absoluteString == "http://cbk-apps.localhost:3000/")
+    #expect(labs.url.absoluteString == "http://cbk-labs.localhost:31000/")
+    #expect(apps.url.absoluteString == "http://cbk-apps.localhost:31000/")
     #expect(labs.id != apps.id)
     #expect(model.pageWindow(for: .labs)?.id != labs.id)
     #expect(await runtime.starts == 1)

@@ -47,8 +47,10 @@ bash scripts/test-web-transport.sh dist/Studio.app
 
 The WebKit smoke test uses hidden, separately signed probe apps, an ephemeral
 loopback HTTP fixture, and nonpersistent web data. It reproduces the ATS failure
-without the policy, verifies Apps and Labs load with it, and checks an unlisted
-hostname remains blocked. The probes have only sandbox and client/server network
+without the policy, verifies Apps, Labs, custom local endpoint names and nested
+apex names load with it, and checks remote HTTP remains blocked. Manifest tests
+separately ensure undeclared local hosts and unrelated ports are not trusted
+application origins. The probes have only sandbox and client/server network
 entitlements; they neither launch Studio's VM nor access its workspace. Evidence
 is retained in the temporary directory printed by the script. This test requires
 a logged-in macOS GUI session and is separate from headless CI policy checks.

@@ -30,14 +30,11 @@
     <dict>
         <key>NSExceptionDomains</key>
         <dict>
-            <key>cbk-apps.localhost</key>
+            <key>localhost</key>
             <dict>
                 <key>NSExceptionAllowsInsecureHTTPLoads</key>
                 <true/>
-            </dict>
-            <key>cbk-labs.localhost</key>
-            <dict>
-                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <key>NSIncludesSubdomains</key>
                 <true/>
             </dict>
         </dict>

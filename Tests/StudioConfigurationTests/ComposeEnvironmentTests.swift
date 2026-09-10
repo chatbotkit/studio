@@ -6,31 +6,30 @@ private func document(_ environment: String) -> String {
     "services:\n  platform:\n    environment:\n" + environment.split(separator: "\n", omittingEmptySubsequences: false).map { "      " + $0 }.joined(separator: "\n")
 }
 
-@Test func studioArtifactEnvironmentMatchesComposeDefaults() throws {
+struct ComposeReference: Decodable {
+    let environments: [String: [String: String]]
+    let manifest: StackManifest
+}
+
+func studioFixture() throws -> String {
     let path = try #require(Bundle.module.url(forResource: "studio-compose", withExtension: "yml", subdirectory: "Fixtures"))
-    let yaml = try String(contentsOf: path, encoding: .utf8)
-    let docker = try ComposeEnvironment.load(yaml)
-    let expectedPath = try #require(Bundle.module.url(forResource: "docker-compose-environment", withExtension: "json", subdirectory: "Fixtures"))
-    let expected = try JSONDecoder().decode([String: [String: String]].self, from: Data(contentsOf: expectedPath))
-    #expect(docker.mapValues(\.values) == expected)
-    let native = try PrivateStackEnvironment.load(yaml, hostPort: 3010)
-    #expect(native.count == 6)
-    let platform = try #require(native["platform"])
-    #expect(platform.values["NEXTAUTH_TRUSTED_SIGNIN"] == "true")
-    #expect(platform.values["SANDBOX_DATA_DIR"] == "/data/sandbox")
-    #expect(platform.values["CLOAK_ENCRYPTION_KEY"] == "")
-    #expect(platform.values["STORAGE_REGION"] == "garage")
-    #expect(platform.values["STORAGE_FORCE_PATH_STYLE"] == "true")
-    #expect(platform.values["SITE_URL"] == "http://127.0.0.1:3010")
-    #expect(platform.values["NEXTAUTH_URL"] == platform.values["SITE_URL"])
-    #expect(platform.values["STORAGE_ENDPOINT"] == "http://127.0.0.1:3900")
-    #expect(platform.values["RELAY_URL"] == "http://127.0.0.1:3001")
-    #expect(platform.values["APP_MAIN_ORIGIN"] == "http://cbk-apps.localhost:3010")
-    #expect(native["garage"]?.values["RUST_LOG"] == "warn")
-    #expect(native["garage-init"]?.values["GARAGE_S3_URL"] == "http://garage:3900")
-    let topology = Set(["SITE_URL", "NEXTAUTH_URL", "STORAGE_ENDPOINT", "RELAY_URL", "APP_MAIN_ORIGIN", "APP_LABS_ORIGIN"])
-    for (service, environment) in docker {
-        #expect(environment.values.filter { !topology.contains($0.key) } == native[service]?.values.filter { !topology.contains($0.key) })
+    return try String(contentsOf: path, encoding: .utf8)
+}
+
+@Test func studioArtifactEnvironmentMatchesComposeDefaults() throws {
+    let yaml = try studioFixture()
+    for native in [false, true] {
+        let result = try native
+            ? PrivateStackEnvironment.load(yaml, sitePort: 31000, relayPort: 31001, storagePort: 31900)
+            : ComposeEnvironment.loadStack(yaml)
+        let name = native ? "docker-compose-native" : "docker-compose-environment"
+        let path = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
+        let reference = try JSONDecoder().decode(ComposeReference.self, from: Data(contentsOf: path))
+        #expect(result.environments.mapValues(\.values) == reference.environments)
+        #expect(result.manifest == reference.manifest)
+        let garage = try GarageConfiguration.extract(from: yaml, variables: ["STORAGE_PORT": "31900"])
+        #expect(garage.s3Port == 31900)
+        #expect(garage.configuration.contains("[::]:31900"))
     }
 }
 
@@ -83,7 +82,10 @@ func externalComposeEnvironmentSourcesAreRejected(_ field: String) {
     #expect(throws: ConfigurationError.self) { try ComposeEnvironment.load("services: {}\n---\nservices: {}") }
 }
 
-@Test func incompatibleNativePortsAreRejected() {
-    #expect(throws: ConfigurationError.self) { try PrivateStackEnvironment.load(document("PORT: 8000"), hostPort: 3000) }
-    #expect(throws: ConfigurationError.self) { try PrivateStackEnvironment.load(document("PORT: 3000\nRELAY_PORT: 8001"), hostPort: 3000) }
+@Test func incompatibleNativePortsAreRejected() throws {
+    let yaml = try studioFixture()
+    for field in ["PORT: 3000", "RELAY_PORT: 3001"] {
+        #expect(yaml.contains(field))
+        #expect(throws: ConfigurationError.self) { try PrivateStackEnvironment.load(yaml.replacingOccurrences(of: field, with: field.components(separatedBy: ":")[0] + ": '9999'"), sitePort: 31000, relayPort: 31001, storagePort: 31900) }
+    }
 }

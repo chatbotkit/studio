@@ -1,4 +1,5 @@
 import Foundation
+import StudioConfiguration
 
 enum WorkspaceDestination: CaseIterable {
     case apps
@@ -11,16 +12,10 @@ enum WorkspaceDestination: CaseIterable {
         }
     }
 
-    func url(port: Int) -> URL? {
-        guard (1...65535).contains(port) else { return nil }
-        var components = URLComponents()
-        components.scheme = "http"
+    func url(manifest: StackManifest) -> URL? {
         switch self {
-        case .labs: components.host = "cbk-labs.localhost"
-        case .apps: components.host = "cbk-apps.localhost"
+        case .labs: manifest.url(for: "labs")
+        case .apps: manifest.url(for: "apps")
         }
-        components.port = port
-        components.path = "/"
-        return components.url
     }
 }

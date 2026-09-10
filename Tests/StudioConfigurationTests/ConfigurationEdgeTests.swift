@@ -52,28 +52,28 @@ func malformedExpansionsAreRejected(_ source: String) {
       unrelated-config:
         content: |
           [s3_api]
-          api_bind_addr = "[::]:3900"
+          api_bind_addr = "[::]:31900"
           [admin]
           api_bind_addr = "[::]:3903"
     """
-    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: yaml) }
+    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: yaml, variables: ["STORAGE_PORT": "31900"]) }
 }
 
 @Test func garageRejectsMissingConfiguration() {
-    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "services:\n  platform:\n    image: example") }
-    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "configs:\n  garage-config:\n    content: |\n") }
+    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "services:\n  platform:\n    image: example", variables: ["STORAGE_PORT": "31900"]) }
+    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "configs:\n  garage-config:\n    content: |\n", variables: ["STORAGE_PORT": "31900"]) }
 }
 
 @Test func garageRejectsDuplicateConfigsAndOutOfScopeMarkers() {
-    let config = "  garage-config:\n    content: |\n      [s3_api]\n      api_bind_addr = \"[::]:3900\"\n      [admin]\n      api_bind_addr = \"[::]:3903\"\n"
-    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "configs:\n" + config + config) }
-    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "configs:\n  other:\n    file: other.toml\nservices:\n" + config) }
+    let config = "  garage-config:\n    content: |\n      [s3_api]\n      api_bind_addr = \"[::]:31900\"\n      [admin]\n      api_bind_addr = \"[::]:3903\"\n"
+    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "configs:\n" + config + config, variables: ["STORAGE_PORT": "31900"]) }
+    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: "configs:\n  other:\n    file: other.toml\nservices:\n" + config, variables: ["STORAGE_PORT": "31900"]) }
 }
 
 @Test func garageAcceptsCRLFDocuments() throws {
-    let yaml = "configs:\n  garage-config:\n    content: |\n      [s3_api]\n      api_bind_addr = \"[::]:3900\"\n      [admin]\n      api_bind_addr = \"[::]:3903\"\n"
-    let expected = try GarageConfiguration.extract(from: yaml)
-    let actual = try GarageConfiguration.extract(from: yaml.replacingOccurrences(of: "\n", with: "\r\n"))
+    let yaml = "configs:\n  garage-config:\n    content: |\n      [s3_api]\n      api_bind_addr = \"[::]:31900\"\n      [admin]\n      api_bind_addr = \"[::]:3903\"\n"
+    let expected = try GarageConfiguration.extract(from: yaml, variables: ["STORAGE_PORT": "31900"])
+    let actual = try GarageConfiguration.extract(from: yaml.replacingOccurrences(of: "\n", with: "\r\n"), variables: ["STORAGE_PORT": "31900"])
     #expect(actual == expected)
 }
 

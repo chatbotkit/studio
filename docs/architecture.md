@@ -16,15 +16,17 @@ Studio implements a platform-specific Compose adapter, not a general Compose eng
 
 The Mac shell environment and `.env` files are not imported. Unsupported `env_file` and `extends` declarations fail before VM startup. Arbitrary Compose commands, mounts, and network topologies remain outside this adapter's scope.
 
-Only native topology values are substituted: the actual platform origin, loopback storage and relay URLs, and app-shell ports. Feature flags and storage settings come from the artifact.
+The `x-cbk` version 1 endpoint manifest and all service environments are resolved together from one parsed YAML node with the same explicit variables. Artifacts without a valid manifest are rejected; there is no legacy-address fallback. Only native topology values are substituted: allocated platform, relay and storage ports, the actual platform origin, and loopback storage and relay URLs. Apps/Labs origins and space/portal apexes come from the artifact, not a native hostname list. Feature flags and storage settings also come from the artifact.
 
 ## Networking
 
-Platform traffic is published on localhost port 3000, with the next available port selected when necessary. The realtime relay uses 3001 and the S3 endpoint uses 3900. All host listeners bind exclusively to `127.0.0.1`.
+The manifest declares preferred site, relay and storage ports (currently 31000, 31001 and 31900 in the new Studio artifact). The site may use the next available port within a +9 window, excluding both auxiliary ports. Studio then resolves the manifest and environments again with the chosen ports. All host listeners bind exclusively to `127.0.0.1`.
 
-Auxiliary ports must be available; Studio fails startup instead of attaching to another application's listener. Port 3001 is excluded from platform fallback. Internal platform, relay, S3, and admin ports remain 3000, 3001, 3900, and 3903.
+Auxiliary ports must be available; Studio fails startup instead of attaching to another application's listener. Published ports and container ports are distinct: the platform and relay still listen inside the VM on environment ports 3000 and 3001. Garage's S3 port must equal the allocated storage port on both sides; its admin port remains 3903. The bridge derives its targets from these resolved container settings, with the first target using the bare Unix socket and subsequent targets using a port suffix.
 
-App-shell and space or portal hostnames remain distinct. Studio does not modify the system hosts file. VM DNS and the default route are derived from the active virtual network rather than a hardcoded gateway address.
+App-shell and space or portal hostnames remain distinct. The VM hosts entry includes service names, manifest URL hosts and apexes, but cannot express apex wildcards. Studio does not modify the Mac's system hosts file or add wildcard DNS. VM DNS and the default route are derived from the active virtual network rather than a hardcoded gateway address.
+
+Only HTTP endpoints with explicit matching ports on loopback literals or valid `.localhost` names are accepted. Internal-window routing also checks ports and apex boundaries, so unrelated local apps do not become trusted origins. See [endpoint manifest validation](endpoint-manifest-validation.md) for fixtures and verification evidence.
 
 ## Runtime identity
 

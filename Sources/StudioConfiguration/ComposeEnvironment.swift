@@ -20,14 +20,29 @@ public struct ComposeEnvironment: Sendable, Equatable {
     }
 
     public static func load(_ yaml: String, variables: [String: String] = [:]) throws -> [String: ComposeEnvironment] {
+        var budget = 10_000
+        return try environments(from: root(yaml, budget: &budget), variables: variables, budget: &budget)
+    }
+
+    public static func loadStack(_ yaml: String, variables: [String: String] = [:]) throws -> ResolvedStackConfiguration {
+        var budget = 10_000
+        let root = try root(yaml, budget: &budget)
+        let environments = try environments(from: root, variables: variables, budget: &budget)
+        let manifest = try StackManifest.load(root["x-cbk"], variables: variables, services: Set(environments.keys), budget: &budget)
+        return ResolvedStackConfiguration(environments: environments, manifest: manifest)
+    }
+
+    private static func root(_ yaml: String, budget: inout Int) throws -> [String: Node] {
         guard yaml.utf8.count <= 2 * 1_024 * 1_024 else { throw invalid() }
         let node: Node
         do {
             guard let parsed = try Yams.compose(yaml: yaml, .default, .default, .utf8) else { throw invalid() }
             node = parsed
         } catch { throw ConfigurationError("Invalid Compose YAML; environment was not applied.") }
-        var budget = 10_000
-        let root = try mapping(node, depth: 0, budget: &budget)
+        return try mapping(node, depth: 0, budget: &budget)
+    }
+
+    private static func environments(from root: [String: Node], variables: [String: String], budget: inout Int) throws -> [String: ComposeEnvironment] {
         guard let services = root["services"] else { throw invalid() }
         let serviceMap = try mapping(services, depth: 0, budget: &budget)
         var result: [String: ComposeEnvironment] = [:]
@@ -68,7 +83,7 @@ public struct ComposeEnvironment: Sendable, Equatable {
 
     /// Merge aliases before interpolation. Explicit keys override merged keys;
     /// earlier maps in a merge sequence take precedence, as YAML specifies.
-    private static func mapping(_ node: Node, depth: Int, budget: inout Int) throws -> [String: Node] {
+    static func mapping(_ node: Node, depth: Int, budget: inout Int) throws -> [String: Node] {
         guard depth < 32, let map = node.mapping else { throw invalid() }
         budget -= map.count + 1
         guard budget >= 0 else { throw invalid() }
@@ -103,18 +118,35 @@ public struct ComposeEnvironment: Sendable, Equatable {
 /// Only topology-dependent substitutions differ from Docker Compose. All
 /// feature flags, credentials/defaults and service settings come from YAML.
 public enum PrivateStackEnvironment {
-    public static func load(_ yaml: String, hostPort: UInt16) throws -> [String: ComposeEnvironment] {
-        let origin = "http://127.0.0.1:\(hostPort)"
-        let result = try ComposeEnvironment.load(yaml, variables: [
+    public static func variables(sitePort: UInt16, relayPort: UInt16, storagePort: UInt16) -> [String: String] {
+        let origin = "http://127.0.0.1:\(sitePort)"
+        return [
+            "PLATFORM_PORT": String(sitePort), "RELAY_PORT": String(relayPort), "STORAGE_PORT": String(storagePort),
             "SITE_URL": origin, "NEXTAUTH_URL": origin,
-            "STORAGE_URL": "http://127.0.0.1:3900",
-            "RELAY_URL": "http://127.0.0.1:3001",
-            "APP_MAIN_ORIGIN": "http://cbk-apps.localhost:\(hostPort)",
-            "APP_LABS_ORIGIN": "http://cbk-labs.localhost:\(hostPort)"
-        ])
-        guard let platform = result["platform"], platform.values["PORT"] == "3000",
+            "STORAGE_URL": "http://127.0.0.1:\(storagePort)",
+            "RELAY_URL": "http://127.0.0.1:\(relayPort)"
+        ]
+    }
+
+    public static func load(_ yaml: String, sitePort: UInt16, relayPort: UInt16, storagePort: UInt16) throws -> ResolvedStackConfiguration {
+        let result = try ComposeEnvironment.loadStack(yaml, variables: variables(sitePort: sitePort, relayPort: relayPort, storagePort: storagePort))
+        try result.manifest.validate(ports: .init(site: sitePort, relay: relayPort, storage: storagePort))
+        guard let platform = result.environments["platform"], platform.values["PORT"] == "3000",
               platform.values["RELAY_PORT"] == nil || platform.values["RELAY_PORT"] == "3001" else {
             throw ConfigurationError("The private runtime requires platform port 3000 and relay port 3001.")
+        }
+        // These endpoints are used inside and outside the shared pod. A literal
+        // environment override must not silently disagree with the manifest.
+        let expected = ["SITE_URL": "site", "NEXTAUTH_URL": "site", "APP_MAIN_ORIGIN": "apps", "APP_LABS_ORIGIN": "labs", "RELAY_URL": "relay", "STORAGE_ENDPOINT": "storage"]
+        for (variable, endpoint) in expected {
+            guard platform.values[variable] == result.manifest.endpoints[endpoint]?.url else {
+                throw ConfigurationError("Platform environment does not match endpoint manifest: \(variable).")
+            }
+        }
+        for (variable, apex) in [("SPACE_APEX", "space"), ("PORTAL_APEX", "portal")] {
+            guard platform.values[variable] == result.manifest.apexes[apex]?.apex else {
+                throw ConfigurationError("Platform environment does not match endpoint manifest: \(variable).")
+            }
         }
         return result
     }

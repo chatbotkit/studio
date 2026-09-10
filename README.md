@@ -68,6 +68,8 @@ Studio requires an Apple silicon Mac running macOS 26 or later. The first launch
 
 Studio does not control an existing Docker or Apple Container installation. It embeds its own verified runtime, starts the platform in an app-private VM, and exposes the workspace only through loopback addresses on your Mac. The native host remains sandboxed and uses a deliberately narrow permission set.
 
+Workspace addresses are supplied by the stack's [endpoint manifest](docs/architecture.md#networking), so Studio follows its Apps and Labs destinations without a fixed hostname list.
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md)

@@ -6,6 +6,10 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Changed
+
+- Read workspace addresses, Apps/Labs destinations, and port reservations from the stack's endpoint manifest. The new Studio stack defaults to site 31000, relay 31001, and storage 31900; older artifacts without a manifest are no longer supported.
+
 ### Fixed
 
 - Show an explicit download percentage and promptly switch between measured progress and preparation activity, including when download callbacks pause.

@@ -36,13 +36,15 @@ uploaded automatically, and diagnostics require no additional entitlements.
 
 ## Embedded web content
 
-Studio adds App Transport Security HTTP exceptions only for the exact
-`cbk-apps.localhost` and `cbk-labs.localhost` names through [per-domain exceptions](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
-These local services do not use TLS. The exceptions do not include subdomains or
-disable ATS for other web content. Packaging verifies the complete policy; no
-sandbox entitlements are added for these exceptions.
+Studio adds an App Transport Security HTTP exception only for `localhost` and
+its subdomains through [per-domain exceptions](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
+This accommodates manifest-defined local endpoint names and space/portal apexes,
+which do not use TLS. Remote HTTP remains blocked. Transport permission does not
+make every local name a trusted application origin: manifest host, apex and port
+checks are enforced separately. Packaging verifies the complete policy; no
+sandbox entitlements are added for this exception.
 
-The local platform is treated as Studio's trusted application origin. Same-origin new-window requests open in another Studio window; external destinations open in the default browser. WebKit still controls user-activation and page security rules.
+The resolved manifest defines Studio's trusted local origins. New-window requests between those origins open in another Studio window; external destinations open in the default browser. Port checks and dot-delimited apex matching prevent unrelated local applications or similarly named domains from becoming internal. WebKit still controls user-activation and page security rules.
 
 Microphone use is automatically accepted at the page layer only for the trusted local origin. macOS continues to present and enforce Studio's system privacy permission.
 

@@ -2,8 +2,8 @@ import Testing
 @testable import StudioConfiguration
 
 @Test func composeExpansion() throws {
-    #expect(try ComposeInterpolation.resolve("[::]:${STORAGE_PORT:-3900}") == "[::]:3900")
-    #expect(try ComposeInterpolation.resolve("${URL:-http://garage:${PORT:-3900}}") == "http://garage:3900")
+    #expect(try ComposeInterpolation.resolve("[::]:${STORAGE_PORT:-31900}") == "[::]:31900")
+    #expect(try ComposeInterpolation.resolve("${URL:-http://garage:${PORT:-31900}}") == "http://garage:31900")
     #expect(try ComposeInterpolation.resolve("$PORT/${PORT}", variables: ["PORT": "4000"]) == "4000/4000")
     #expect(try ComposeInterpolation.resolve("${A:-fallback}/${A-fallback}", variables: ["A": ""]) == "fallback/")
     #expect(try ComposeInterpolation.resolve("${A:+yes}/${A+yes}", variables: ["A": ""]) == "/yes")
@@ -14,7 +14,7 @@ import Testing
     #expect(throws: ConfigurationError.self) { try ComposeInterpolation.resolve("${A:?required}", variables: ["A": ""]) }
 }
 
-@Test(arguments: ["$MISSING", "${MISSING}", "${PORT:-3900", "${PORT/foo/bar}", "${}", "${PORT:?required}"])
+@Test(arguments: ["$MISSING", "${MISSING}", "${PORT:-31900", "${PORT/foo/bar}", "${}", "${PORT:?required}"])
 func invalidConfigurationFailsBeforeLaunch(_ value: String) {
     #expect(throws: ConfigurationError.self) { try ComposeInterpolation.resolve(value) }
 }
@@ -35,18 +35,18 @@ private func compose(port: String) -> String {
     """
 }
 
-@Test(arguments: ["${STORAGE_PORT:-3900}", "3900"])
+@Test(arguments: ["${STORAGE_PORT:-31900}", "31900"])
 func garageConfigurationRegression(_ port: String) throws {
-    let result = try GarageConfiguration.extract(from: compose(port: port))
-    #expect(result.contains("api_bind_addr = \"[::]:3900\""))
-    #expect(result.contains("admin_token = \"dev-admin-token\""))
-    #expect(!result.contains("${"))
-    #expect(!result.contains("volumes:"))
+    let result = try GarageConfiguration.extract(from: compose(port: port), variables: ["STORAGE_PORT": "31900"])
+    #expect(result.configuration.contains("api_bind_addr = \"[::]:31900\""))
+    #expect(result.configuration.contains("admin_token = \"dev-admin-token\""))
+    #expect(!result.configuration.contains("${"))
+    #expect(!result.configuration.contains("volumes:"))
 }
 
-@Test(arguments: ["${UNKNOWN}", "garbage", "${STORAGE_PORT:-9999}"])
+@Test(arguments: ["${UNKNOWN}", "garbage", "9999"])
 func garageRejectsInvalidPort(_ port: String) {
-    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: compose(port: port)) }
+    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: compose(port: port), variables: ["STORAGE_PORT": "31900"]) }
 }
 
 @Test func startupErrorShowsRootCauseFirst() {

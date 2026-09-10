@@ -1,11 +1,10 @@
 import Foundation
 
-// Compare the entire policy so global bypasses, wildcard/subdomain exceptions,
+// Compare the entire policy so global bypasses, non-local subdomain exceptions,
 // and accidental exceptions for remote sites fail packaging verification.
 let expected: NSDictionary = [
     "NSExceptionDomains": [
-        "cbk-apps.localhost": ["NSExceptionAllowsInsecureHTTPLoads": true],
-        "cbk-labs.localhost": ["NSExceptionAllowsInsecureHTTPLoads": true],
+        "localhost": ["NSExceptionAllowsInsecureHTTPLoads": true, "NSIncludesSubdomains": true],
     ],
 ]
 
@@ -24,13 +23,13 @@ if CommandLine.arguments.dropFirst().first == "--self-test" {
         policy[key] = true
         precondition(!isValid(policy))
     }
-    for host in ["cbk-apps.localhost", "cbk-labs.localhost"] {
+    for host in ["localhost"] {
         var domains = expected["NSExceptionDomains"] as! [String: [String: Bool]]
         domains.removeValue(forKey: host)
         precondition(!isValid(["NSExceptionDomains": domains]))
         domains[host] = ["NSExceptionAllowsInsecureHTTPLoads": false]
         precondition(!isValid(["NSExceptionDomains": domains]))
-        domains[host] = ["NSExceptionAllowsInsecureHTTPLoads": true, "NSIncludesSubdomains": true]
+        domains[host] = ["NSExceptionAllowsInsecureHTTPLoads": true]
         precondition(!isValid(["NSExceptionDomains": domains]))
     }
     var domains = expected["NSExceptionDomains"] as! [String: [String: Bool]]
@@ -44,8 +43,8 @@ if CommandLine.arguments.dropFirst().first == "--self-test" {
     let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
     let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
     guard isValid(plist?["NSAppTransportSecurity"]) else {
-        fputs("Invalid web transport policy: expected only exact Apps and Labs HTTP exceptions.\n", stderr)
+        fputs("Invalid web transport policy: expected only localhost and its subdomains.\n", stderr)
         exit(1)
     }
-    print("Verified: HTTP exceptions limited to Apps and Labs localhost names.")
+    print("Verified: HTTP exceptions limited to localhost and its subdomains.")
 }

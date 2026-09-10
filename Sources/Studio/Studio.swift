@@ -104,7 +104,7 @@ struct OCIStackBundle: Sendable {
     let composeYAML: String
     let digestLockYAML: String
     let images: [String: String]
-    let garageConfiguration: String
+    let preferredConfiguration: ResolvedStackConfiguration
 }
 
 enum OCIComposeLoader {
@@ -139,7 +139,9 @@ enum OCIComposeLoader {
         for name in serviceNames where !compose.contains("  \(name):") {
             throw AppRuntimeError("The OCI Compose file is missing service \(name).")
         }
-        let garage = try GarageConfiguration.extract(from: compose)
+        let configuration = try ComposeEnvironment.loadStack(compose)
+        let ports = try configuration.manifest.preferredPorts
+        _ = try GarageConfiguration.extract(from: compose, variables: ["STORAGE_PORT": String(ports.storage)])
 
         let artifactRoot = cacheRoot.appendingPathComponent(root.digest.replacingOccurrences(of: ":", with: "-"), isDirectory: true)
         try FileManager.default.createDirectory(at: artifactRoot, withIntermediateDirectories: true)
@@ -152,7 +154,7 @@ enum OCIComposeLoader {
             composeYAML: compose,
             digestLockYAML: lock,
             images: images,
-            garageConfiguration: garage
+            preferredConfiguration: configuration
         )
     }
 
@@ -301,7 +303,7 @@ private final class TCPRelay: @unchecked Sendable {
     }
 }
 
-private final class LocalTCPForwarder: @unchecked Sendable {
+final class LocalTCPForwarder: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ai.cbk.private-oci-stack.forwarder", qos: .userInitiated)
     private let lock = NSLock()
     private var listener: NWListener?
@@ -446,6 +448,7 @@ struct StackInfo: Sendable, Equatable {
     let resolvedDigest: String
     let composeYAML: String
     let publishedPort: UInt16
+    let manifest: StackManifest
 }
 
 enum RuntimeEvent: Sendable {
@@ -535,25 +538,27 @@ actor PrivateOCIStackRuntime: StackRuntime {
         // too long, while the app's sandboxed temporary directory is short.
         let hostSocket = FileManager.default.temporaryDirectory.appendingPathComponent("private-oci-http.sock")
         try? FileManager.default.removeItem(at: hostSocket)
+        let preferred = try bundle.preferredConfiguration.manifest.preferredPorts
         let localForwarder = LocalTCPForwarder()
-        let hostPort = try await localForwarder.start(preferredPort: 3000, targetUnixSocketPath: hostSocket.path, excluding: [3001])
+        let hostPort = try await localForwarder.start(preferredPort: preferred.site, targetUnixSocketPath: hostSocket.path, excluding: [preferred.relay, preferred.storage])
         forwarder = localForwarder
-        if hostPort == 3000 {
-            await event(.log("Reserved http://localhost:3000"))
-        } else {
-            await event(.log("Port 3000 is occupied; safely using localhost:\(hostPort)"))
-        }
+        await event(.log("Reserved loopback site port \(hostPort) (preferred \(preferred.site))"))
 
+        let resolved = try PrivateStackEnvironment.load(bundle.composeYAML, sitePort: hostPort, relayPort: preferred.relay, storagePort: preferred.storage)
+        let manifest = resolved.manifest
+        let garage = try GarageConfiguration.extract(from: bundle.composeYAML, variables: PrivateStackEnvironment.variables(sitePort: hostPort, relayPort: preferred.relay, storagePort: preferred.storage))
         let garageFile = dataRoot.appendingPathComponent("garage.toml")
-        try Data(bundle.garageConfiguration.utf8).write(to: garageFile, options: .atomic)
-        let plans = try makePlans(bundle: bundle, hostPort: hostPort, garageFile: garageFile)
+        try Data(garage.configuration.utf8).write(to: garageFile, options: .atomic)
+        let plans = try makePlans(bundle: bundle, environments: resolved.environments, garageFile: garageFile)
         let platformEnvironment = plans.first { $0.name == "platform" }!.environment.values
-        var bridgePorts: [UInt16] = [3000]
-        if platformEnvironment["RELAY_URL"] != nil { bridgePorts.append(3001) }
-        if platformEnvironment["STORAGE_ENDPOINT"] != nil { bridgePorts.append(3900) }
-        for port in bridgePorts.dropFirst() {
+        guard let siteTarget = platformEnvironment["PORT"].flatMap(UInt16.init),
+              let relayTarget = platformEnvironment["RELAY_PORT"].flatMap(UInt16.init) else {
+            throw AppRuntimeError("The platform is missing its container ports.")
+        }
+        let bridgePorts: [UInt16] = [siteTarget, relayTarget, garage.s3Port]
+        for (port, target) in [(preferred.relay, relayTarget), (preferred.storage, garage.s3Port)] {
             let auxiliary = LocalTCPForwarder()
-            _ = try await auxiliary.start(preferredPort: port, targetUnixSocketPath: hostSocket.path + ".\(port)", allowFallback: false)
+            _ = try await auxiliary.start(preferredPort: port, targetUnixSocketPath: hostSocket.path + ".\(target)", allowFallback: false)
             auxiliaryForwarders.append(auxiliary)
             await event(.log("Reserved loopback service port \(port)"))
         }
@@ -647,7 +652,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
             // workloads run. No gateway or resolver is guessed here.
             configuration.dns = DNS(nameservers: [])
             var entries = Hosts.default.entries
-            entries.append(.init(ipAddress: "127.0.0.1", hostnames: serviceNames + ["cbk.localhost", "cbk-storage.localhost", "cbk-relay.localhost", "cbk-apps.localhost", "cbk-labs.localhost"]))
+            entries.append(.init(ipAddress: "127.0.0.1", hostnames: Array(Set(serviceNames + manifest.hosts.filter { !["127.0.0.1", "::1", "localhost"].contains($0) })).sorted()))
             configuration.hosts = Hosts(entries: entries)
             configuration.volumes = podVolumes
         }
@@ -723,7 +728,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
             try await startHealthy(
                 "platform",
                 in: pod,
-                command: ["node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"],
+                command: ["node", "-e", "fetch('http://127.0.0.1:\(siteTarget)/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"],
                 event: event,
                 progress: 0.96,
                 attempts: 180
@@ -736,13 +741,14 @@ actor PrivateOCIStackRuntime: StackRuntime {
             try Task.checkCancellation()
             try JSONEncoder().encode(protectedImages.sorted()).write(to: dataRoot.appendingPathComponent("protected-images.json"), options: .atomic)
             return StackInfo(
-                url: URL(string: "http://127.0.0.1:\(hostPort)/")!,
+                url: manifest.url(for: "site")!,
                 podID: String(identifier),
                 dataRoot: dataRoot.path,
                 sourceReference: bundle.sourceReference,
                 resolvedDigest: bundle.resolvedDigest,
                 composeYAML: bundle.composeYAML,
-                publishedPort: hostPort
+                publishedPort: hostPort,
+                manifest: manifest
             )
         } catch {
             for name in serviceNames { await event(.service(name, .failed)) }
@@ -1033,8 +1039,8 @@ actor PrivateOCIStackRuntime: StackRuntime {
     ) async throws {
         let script = """
         const fs=require('fs'),net=require('net');
-        for(const port of \(ports)) {
-        const path='/tmp/private-oci-http.sock'+(port===3000?'':'.'+port);
+        for(const [index,port] of \(ports).entries()) {
+        const path='/tmp/private-oci-http.sock'+(index===0?'':'.'+port);
         try{fs.unlinkSync(path)}catch{}
         const server=net.createServer(client=>{
           const upstream=net.connect(port,'127.0.0.1');
@@ -1061,7 +1067,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
         for attempt in 0..<40 {
             try Task.checkCancellation()
             let check = try await pod.execInContainer("platform", processID: "bridge-check-\(attempt)") { configuration in
-                configuration.arguments = ["node", "-e", "const fs=require('fs');process.exit(\(ports).every(p=>fs.existsSync('/tmp/private-oci-http.sock'+(p===3000?'':'.'+p)))?0:1)"]
+                configuration.arguments = ["node", "-e", "const fs=require('fs');process.exit(\(ports).every((p,i)=>fs.existsSync('/tmp/private-oci-http.sock'+(i===0?'':'.'+p)))?0:1)"]
             }
             let status = try await runProbe(check, timeout: 2)
             if status.exitCode == 0 { socketReady = true; break }
@@ -1070,11 +1076,11 @@ actor PrivateOCIStackRuntime: StackRuntime {
         guard socketReady else {
             throw AppRuntimeError("The private HTTP bridge did not start: \(output.text())")
         }
-        for port in ports {
-            let suffix = port == 3000 ? "" : ".\(port)"
+        for (index, port) in ports.enumerated() {
+            let suffix = index == 0 ? "" : ".\(port)"
             let destination = URL(filePath: hostSocket.path + suffix)
             // These sockets belong to this runtime, protected by its storage lease.
-            if port != 3000 { try? FileManager.default.removeItem(at: destination) }
+            if index != 0 { try? FileManager.default.removeItem(at: destination) }
             try await pod.relayUnixSocket(
                 "platform",
                 socket: UnixSocketConfiguration(
@@ -1100,8 +1106,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
         }
     }
 
-    private func makePlans(bundle: OCIStackBundle, hostPort: UInt16, garageFile: URL) throws -> [ServicePlan] {
-        let environments = try PrivateStackEnvironment.load(bundle.composeYAML, hostPort: hostPort)
+    private func makePlans(bundle: OCIStackBundle, environments: [String: ComposeEnvironment], garageFile: URL) throws -> [ServicePlan] {
         for name in serviceNames where environments[name] == nil {
             throw AppRuntimeError("Missing Compose service environment: \(name)")
         }
@@ -1266,7 +1271,7 @@ final class AppModel: ObservableObject {
     }
 
     func pageWindow(for destination: WorkspaceDestination) -> StudioPageWindow? {
-        guard let info, let url = destination.url(port: Int(info.publishedPort)) else { return nil }
+        guard let info, let url = destination.url(manifest: info.manifest) else { return nil }
         return StudioPageWindow(url: url)
     }
 
@@ -1490,6 +1495,7 @@ final class EmbeddedWebInspector {
 struct EmbeddedWebView: NSViewRepresentable {
     let url: URL
     let colorScheme: ColorScheme
+    var manifest: StackManifest? = nil
     let onEdgeColors: @MainActor (NSColor, NSColor) -> Void
     let onReady: @MainActor () -> Void
     var onOpenInternalWindow: @MainActor (URL) -> Bool = { _ in false }
@@ -1526,11 +1532,13 @@ struct EmbeddedWebView: NSViewRepresentable {
         init(
             onEdgeColors: @escaping @MainActor (NSColor, NSColor) -> Void,
             onReady: @escaping @MainActor () -> Void,
+            manifest: StackManifest? = nil,
             onOpenInternalWindow: @escaping @MainActor (URL) -> Bool = { _ in false },
             onLoading: @escaping @MainActor () -> Void = {},
             onFailure: @escaping @MainActor (String) -> Void = { _ in }
         ) {
             self.externalBrowserWindows = ExternalBrowserWindowDelegate(
+                manifest: manifest,
                 openInternalURL: onOpenInternalWindow
             )
             self.onEdgeColors = onEdgeColors
@@ -1792,6 +1800,7 @@ struct EmbeddedWebView: NSViewRepresentable {
         Coordinator(
             onEdgeColors: onEdgeColors,
             onReady: onReady,
+            manifest: manifest,
             onOpenInternalWindow: onOpenInternalWindow,
             onLoading: onLoading,
             onFailure: onFailure
@@ -1836,6 +1845,7 @@ struct EmbeddedWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
+        context.coordinator.externalBrowserWindows.manifest = manifest
         applyAppearance(to: view)
         context.coordinator.appearanceDidChange(
             isDark: colorScheme == .dark,
@@ -2029,6 +2039,7 @@ struct ContentView: View {
                     EmbeddedWebView(
                         url: info.url,
                         colorScheme: colorScheme,
+                        manifest: info.manifest,
                         onEdgeColors: { themeColor, backgroundColor in
                             pageThemeColor = themeColor
                             pageBackgroundColor = backgroundColor
@@ -2084,6 +2095,7 @@ struct ContentView: View {
 
 struct StudioPageView: View {
     let destination: StudioPageWindow
+    @ObservedObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openWindow) private var openWindow
     @SwiftUI.State private var pageReveal = WebPageRevealState()
@@ -2100,6 +2112,7 @@ struct StudioPageView: View {
                 EmbeddedWebView(
                     url: destination.url,
                     colorScheme: colorScheme,
+                    manifest: model.info?.manifest,
                     onEdgeColors: { themeColor, backgroundColor in
                         pageThemeColor = themeColor
                         pageBackgroundColor = backgroundColor
@@ -2526,7 +2539,7 @@ struct StudioApp: App {
             }
         WindowGroup("Studio", for: StudioPageWindow.self) { $destination in
             if let destination {
-                StudioPageView(destination: destination)
+                StudioPageView(destination: destination, model: model)
                     .tint(Color(nsColor: StudioBrand.foreground))
             }
         }

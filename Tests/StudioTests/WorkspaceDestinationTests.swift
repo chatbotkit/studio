@@ -1,19 +1,20 @@
 import Testing
 @testable import Studio
 
-@Test func workspaceShortcutsUseDedicatedHostsAtTheirRoots() {
+@Test func workspaceShortcutsUseDedicatedHostsAtTheirRoots() throws {
+    let manifest = try testStackManifest()
     #expect(WorkspaceDestination.allCases.map(\.menuTitle) == ["Open Apps", "Open Labs"])
     #expect(WorkspaceDestination.labs.menuTitle == "Open Labs")
     #expect(WorkspaceDestination.apps.menuTitle == "Open Apps")
-    #expect(WorkspaceDestination.labs.url(port: 3000)?.absoluteString == "http://cbk-labs.localhost:3000/")
-    #expect(WorkspaceDestination.apps.url(port: 3000)?.absoluteString == "http://cbk-apps.localhost:3000/")
+    #expect(WorkspaceDestination.labs.url(manifest: manifest)?.absoluteString == "http://cbk-labs.localhost:31000/")
+    #expect(WorkspaceDestination.apps.url(manifest: manifest)?.absoluteString == "http://cbk-apps.localhost:31000/")
 }
 
-@Test func workspaceShortcutsFollowTheRunningStacksPublishedPort() {
+@Test func workspaceShortcutsFollowTheRunningStacksPublishedPort() throws {
+    let manifest = try testStackManifest(sitePort: 31007, appsHost: "custom-apps.localhost")
+    #expect(WorkspaceDestination.apps.url(manifest: manifest)?.host == "custom-apps.localhost")
     for destination in WorkspaceDestination.allCases {
-        #expect(destination.url(port: 3007)?.port == 3007)
-        #expect(destination.url(port: 3007)?.path == "/")
-        #expect(destination.url(port: 0) == nil)
-        #expect(destination.url(port: 65536) == nil)
+        #expect(destination.url(manifest: manifest)?.port == 31007)
+        #expect(destination.url(manifest: manifest)?.path == "/")
     }
 }

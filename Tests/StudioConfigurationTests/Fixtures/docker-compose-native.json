@@ -29,7 +29,7 @@
       "NAMESPACE_S3_BUCKET_NAME": "namespace",
       "NEXTAUTH_SECRET": "",
       "NEXTAUTH_TRUSTED_SIGNIN": "true",
-      "NEXTAUTH_URL": "http://cbk.localhost:31000",
+      "NEXTAUTH_URL": "http://127.0.0.1:31000",
       "NODE_ENV": "production",
       "OPENAI_API_KEY": "",
       "OPENROUTER_MODELS_API_KEY": "",
@@ -43,15 +43,15 @@
       "QUEUE_SECRET": "",
       "REDIS_URL": "redis://redis:6379",
       "RELAY_PORT": "3001",
-      "RELAY_URL": "http://cbk-relay.localhost:31001",
+      "RELAY_URL": "http://127.0.0.1:31001",
       "SANDBOX_DATA_DIR": "/data/sandbox",
       "SESSION_S3_BUCKET_NAME": "session",
-      "SITE_URL": "http://cbk.localhost:31000",
+      "SITE_URL": "http://127.0.0.1:31000",
       "SPACE_APEX": "cbk-space.localhost",
       "SPACE_S3_BUCKET_NAME": "space",
       "STATIC_URL": "",
       "STORAGE_ACCESS_KEY_ID": "",
-      "STORAGE_ENDPOINT": "http://cbk-storage.localhost:31900",
+      "STORAGE_ENDPOINT": "http://127.0.0.1:31900",
       "STORAGE_FORCE_PATH_STYLE": "true",
       "STORAGE_REGION": "garage",
       "STORAGE_SECRET_ACCESS_KEY": "",
@@ -93,19 +93,19 @@
       "relay": {
         "published": "31001",
         "service": "platform",
-        "url": "http://cbk-relay.localhost:31001",
+        "url": "http://127.0.0.1:31001",
         "variable": "RELAY_URL"
       },
       "site": {
         "published": "31000",
         "service": "platform",
-        "url": "http://cbk.localhost:31000",
+        "url": "http://127.0.0.1:31000",
         "variable": "SITE_URL"
       },
       "storage": {
         "published": "31900",
         "service": "garage",
-        "url": "http://cbk-storage.localhost:31900",
+        "url": "http://127.0.0.1:31900",
         "variable": "STORAGE_URL"
       }
     },

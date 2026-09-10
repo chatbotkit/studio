@@ -22,6 +22,7 @@ The root [README](../README.md) is the product introduction and installation pat
 
 - [Stability audit](audit-2026-09-05.md)
 - [Compose environment validation](compose-environment-validation.md)
+- [Endpoint manifest validation](endpoint-manifest-validation.md)
 - [Updater validation](updater-validation.md)
 - [Web confirmation validation](web-confirmation-validation.md)
 - [Prototype history](prototype-history.md)

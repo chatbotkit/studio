@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import StudioConfiguration
 
 /// Keeps new-window web links out of the embedded app window. WebKit calls this
 /// for target="_blank", new named windows, and direct window.open(url) requests.
@@ -8,13 +9,16 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
     private let openInternalURL: (URL) -> Bool
     private let openURL: (URL) -> Bool
     let confirmations: WebConfirmationController
+    var manifest: StackManifest?
 
     init(
         confirmations: WebConfirmationController = WebConfirmationController(),
+        manifest: StackManifest? = nil,
         openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
         openInternalURL: @escaping (URL) -> Bool = { _ in false }
     ) {
         self.confirmations = confirmations
+        self.manifest = manifest
         self.openInternalURL = openInternalURL
         self.openURL = openURL
         super.init()
@@ -45,7 +49,8 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
             scheme: origin.protocol,
             host: origin.host,
             port: origin.port,
-            pageURL: webView.url
+            pageURL: webView.url,
+            manifest: manifest
         ))
     }
 
@@ -54,18 +59,19 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
         scheme: String,
         host: String,
         port: Int,
-        pageURL: URL?
+        pageURL: URL?,
+        manifest: StackManifest? = nil
     ) -> WKPermissionDecision {
         guard type == .microphone,
               let pageURL,
               let pageScheme = pageURL.scheme,
               let pageHost = pageURL.host,
-              ["127.0.0.1", "localhost", "::1"].contains(host.lowercased()),
+              manifest.map({ $0.contains(pageURL) }) ?? ["127.0.0.1", "localhost", "::1"].contains(host.lowercased()),
               scheme.caseInsensitiveCompare(pageScheme) == .orderedSame,
               host.caseInsensitiveCompare(pageHost) == .orderedSame,
               pageURL.port == port else { return .deny }
         // Studio is not a general-purpose browser. Once the request has passed
-        // the exact loaded-loopback-origin and microphone-only checks above,
+        // the exact loaded stack origin and microphone-only checks above,
         // defer user consent to macOS rather than showing a second WebKit prompt
         // labelled with the internal 127.0.0.1 address.
         return .grant
@@ -88,7 +94,10 @@ final class ExternalBrowserWindowDelegate: NSObject, WKUIDelegate {
     @discardableResult
     func openNewWindow(_ request: URLRequest, from pageURL: URL?) -> Bool {
         guard let url = webURL(for: request) else { return false }
-        if Self.hasSameOrigin(url, pageURL) {
+        let isInternal = manifest.map { manifest in
+            manifest.contains(url) && pageURL.map(manifest.contains) == true
+        } ?? Self.hasSameOrigin(url, pageURL)
+        if isInternal {
             return openInternalURL(url)
         }
         return openURL(url)

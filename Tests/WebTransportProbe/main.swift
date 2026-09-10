@@ -8,7 +8,7 @@ final class Probe: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     var webView: WKWebView!
     var window: NSWindow!
     var index = 0
-    let hosts = ["cbk-apps.localhost", "cbk-labs.localhost", "unlisted.localhost"]
+    let hosts = ["cbk-apps.localhost", "cbk-labs.localhost", "custom-apps.localhost", "one.two.cbk-space.localhost", "example.com"]
     let baseline = CommandLine.arguments.contains("--baseline")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -38,7 +38,7 @@ final class Probe: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     func loadNext() {
         if index == hosts.count {
-            print("STUDIO_TRANSPORT_PASS: \(baseline ? "baseline rejects HTTP" : "Apps/Labs load; unlisted host rejected")")
+            print("STUDIO_TRANSPORT_PASS: \(baseline ? "baseline rejects HTTP" : "local endpoint/apex names load; remote HTTP rejected")")
             fflush(stdout)
             exit(0)
         }
@@ -52,7 +52,7 @@ final class Probe: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard !baseline, index < 2 else {
+        guard !baseline, index < hosts.count - 1 else {
             fail("Unexpected successful load for \(hosts[index])")
         }
         webView.evaluateJavaScript("document.title") { title, error in
@@ -66,7 +66,7 @@ final class Probe: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let error = error as NSError
-        guard (baseline || index == 2), error.domain == NSURLErrorDomain, error.code == -1022 else {
+        guard (baseline || index == hosts.count - 1), error.domain == NSURLErrorDomain, error.code == -1022 else {
             fail("\(hosts[index]): \(error)")
         }
         print("PASS: \(hosts[index]) rejected by ATS (-1022)")
