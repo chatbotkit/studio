@@ -8,6 +8,8 @@ All notable changes to Studio are documented here, following
 
 ### Changed
 
+- Remove the Docker setup tagline, repetitive server-side Platform promotion, and "Private by design" section from the README.
+- Move README installation instructions above the workspace feature list.
 - Skip automatic CI builds for changes limited to Markdown, documentation, license, and attribution files; explicit release tags still build normally.
 - Simplify the README footer to match Platform, leaving license information in the repository's license files.
 

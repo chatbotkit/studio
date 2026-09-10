@@ -37,15 +37,13 @@
 
 Studio brings the breadth of the [ChatBotKit Platform](https://github.com/chatbotkit/platform) to your Mac. Build agents, manage knowledge, connect model providers, and test complete experiences while the platform runs in a private Linux VM owned by the app.
 
-No Docker setup. No separate container command. Open Studio and start building.
+## Install Studio
 
-## Build locally. Run the full platform on your servers.
+1. [Download the latest release](https://github.com/chatbotkit/studio/releases/latest).
+2. Move **Studio.app** to Applications and open it.
+3. Add at least one model provider in **Studio → Settings → Models**.
 
-Studio is an easy way to explore and build with ChatBotKit on your Mac. The bigger benefit is the **complete server-side Platform**: run AI behind your products and internal systems, serve your team, and keep control of your infrastructure and data.
-
-For shared deployments, install [ChatBotKit Platform](https://github.com/chatbotkit/platform). It brings together the agent runtime, model gateway, knowledge, integrations, APIs, and access controls in a stack you operate.
-
-**[Install the complete Platform →](https://github.com/chatbotkit/platform#run-it)** · [Server deployment guide](https://github.com/chatbotkit/platform/blob/main/docs/deployment.md)
+Studio requires an Apple silicon Mac running macOS 26 or later. The first launch downloads the platform images, so it also needs an internet connection and sufficient free disk space.
 
 ## One app. A complete AI workspace.
 
@@ -55,20 +53,6 @@ For shared deployments, install [ChatBotKit Platform](https://github.com/chatbot
 - Troubleshoot with native logs, stack details, and Web Inspector.
 - Open multiple Studio windows backed by one shared runtime.
 - Receive signed, notarized application updates.
-
-## Install Studio
-
-1. [Download the latest release](https://github.com/chatbotkit/studio/releases/latest).
-2. Move **Studio.app** to Applications and open it.
-3. Add at least one model provider in **Studio → Settings → Models**.
-
-Studio requires an Apple silicon Mac running macOS 26 or later. The first launch downloads the platform images, so it also needs an internet connection and sufficient free disk space.
-
-## Private by design
-
-Studio does not control an existing Docker or Apple Container installation. It embeds its own verified runtime, starts the platform in an app-private VM, and exposes the workspace only through loopback addresses on your Mac. The native host remains sandboxed and uses a deliberately narrow permission set.
-
-Workspace addresses are supplied by the stack's [endpoint manifest](docs/architecture.md#networking), so Studio follows its Apps and Labs destinations without a fixed hostname list.
 
 ## Documentation
 
