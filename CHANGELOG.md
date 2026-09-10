@@ -6,6 +6,8 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-10
+
 ### Changed
 
 - Read workspace addresses, Apps/Labs destinations, and port reservations from the stack's endpoint manifest. The new Studio stack defaults to site 31000, relay 31001, and storage 31900; older artifacts without a manifest are no longer supported.
@@ -155,7 +157,8 @@ All notable changes to Studio are documented here, following
 
 - Sandbox the native application and keep the platform runtime private to Studio, with local port forwarding and a bundled Linux kernel.
 
-[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.5...HEAD
+[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/chatbotkit/studio/compare/v0.14.5...v0.15.0
 [0.14.5]: https://github.com/chatbotkit/studio/compare/v0.14.4...v0.14.5
 [0.14.4]: https://github.com/chatbotkit/studio/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/chatbotkit/studio/compare/v0.14.2...v0.14.3
