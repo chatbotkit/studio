@@ -9,6 +9,7 @@ All notable changes to Studio are documented here, following
 ### Fixed
 
 - Start correctly when the upstream stack changes its internal ports, and use its declared health checks instead of hard-coded desktop defaults.
+- Keep the app icon visible in macOS dark, clear, and tinted styles with a native layered icon.
 
 ## [0.15.0] - 2026-09-10
 

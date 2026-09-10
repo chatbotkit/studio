@@ -46,6 +46,14 @@ scripts/verify-app.sh dist/Studio.app
 
 Runnable local builds require a real Apple Development or Developer ID identity because hardened-runtime library validation rejects ad-hoc Sparkle loading. Local packaging automatically selects an available identity, or accepts `STUDIO_SIGNING_IDENTITY`. Certificate-free CI artifacts are explicitly packaging-inspection artifacts, not runnable installations. Release CI imports Developer ID credentials before packaging. No `disable-library-validation` entitlement is granted. The disposable VM script also requires a real local identity and re-signs its copy inside-out with that team.
 
+The app icon is generated and compiled programmatically with Xcode's Icon
+Composer command-line tools; no editor or manual export is required. Builds
+render all six native appearance previews and check foreground contrast.
+`verify-app.sh` verifies the packaged `Assets.car` contains default, dark and
+mono icon stacks and the separate CBK mark. The compiler-generated ICNS is
+included for compatibility. These steps require full Xcode with Icon Composer,
+not the standalone Command Line Tools package.
+
 Verification requires an arm64 executable, hardened runtime, strict code signature verification, and only system-library or bundled Sparkle linkage. These five entitlements must be true:
 
 - `com.apple.security.app-sandbox`

@@ -16,6 +16,8 @@
     <string>APPL</string>
     <key>CFBundleIconFile</key>
     <string>Studio</string>
+    <key>CFBundleIconName</key>
+    <string>Studio</string>
     <key>CFBundleShortVersionString</key>
 	<string>0.12.0</string>
     <key>CFBundleVersion</key>

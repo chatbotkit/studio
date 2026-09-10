@@ -57,19 +57,11 @@ final class SVG: NSObject, XMLParserDelegate {
         return svg
     }
 
-    func render(width: Int, height: Int, icon: Bool, to url: URL) throws {
+    func render(width: Int, height: Int, to url: URL) throws {
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
         let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
             bytesPerRow: width * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        if icon {
-            let inset = CGFloat(width) * 0.065
-            let tile = CGRect(x: inset, y: inset, width: CGFloat(width) - inset * 2, height: CGFloat(height) - inset * 2)
-            context.setFillColor(CGColor(gray: 1, alpha: 1))
-            context.addPath(CGPath(roundedRect: tile, cornerWidth: CGFloat(width) * 0.19, cornerHeight: CGFloat(height) * 0.19, transform: nil))
-            context.fillPath()
-        }
-        let fraction: CGFloat = icon ? 0.54 : 1
-        let scale = min(CGFloat(width) / size.width, CGFloat(height) / size.height) * fraction
+        let scale = min(CGFloat(width) / size.width, CGFloat(height) / size.height)
         context.translateBy(x: (CGFloat(width) - size.width * scale) / 2, y: (CGFloat(height) + size.height * scale) / 2)
         context.scaleBy(x: scale, y: -scale)
         context.setFillColor(CGColor(gray: 0, alpha: 1))
@@ -81,13 +73,16 @@ final class SVG: NSObject, XMLParserDelegate {
 
 let input = URL(fileURLWithPath: CommandLine.arguments[1])
 let output = URL(fileURLWithPath: CommandLine.arguments[2])
-let iconset = output.appendingPathComponent("Studio.iconset")
-try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
 let mark = try SVG.load(input.appendingPathComponent("icon.svg"))
 let logo = try SVG.load(input.appendingPathComponent("logo.svg"))
-try mark.render(width: 512, height: 512, icon: false, to: output.appendingPathComponent("CBKMark.png"))
-try logo.render(width: 1156, height: 372, icon: false, to: output.appendingPathComponent("CBKLogo.png"))
-for size in [16, 32, 128, 256, 512] {
-    try mark.render(width: size, height: size, icon: true, to: iconset.appendingPathComponent("icon_\(size)x\(size).png"))
-    try mark.render(width: size * 2, height: size * 2, icon: true, to: iconset.appendingPathComponent("icon_\(size)x\(size)@2x.png"))
-}
+// A separate foreground layer lets macOS retain the mark in dark, clear and
+// tinted appearances rather than inferring a mask from a flattened white tile.
+let layeredIcon = output.appendingPathComponent("Studio.icon")
+let layers = layeredIcon.appendingPathComponent("Assets")
+try FileManager.default.createDirectory(at: layers, withIntermediateDirectories: true)
+try Data(contentsOf: input.appendingPathComponent("Studio.icon.json"))
+    .write(to: layeredIcon.appendingPathComponent("icon.json"))
+try mark.render(width: 1024, height: 1024, to: layers.appendingPathComponent("Mark.png"))
+try mark.render(width: 512, height: 512, to: output.appendingPathComponent("CBKMark.png"))
+try logo.render(width: 1156, height: 372, to: output.appendingPathComponent("CBKLogo.png"))

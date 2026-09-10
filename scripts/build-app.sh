@@ -35,14 +35,20 @@ mkdir -p "$build_root/ModuleCache"
 export CLANG_MODULE_CACHE_PATH="$build_root/ModuleCache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$build_root/ModuleCache"
 swift "$repo_root/scripts/generate-brand-assets.swift" "$repo_root/Resources/Brand" "$build_root/Brand"
-iconutil -c icns "$build_root/Brand/Studio.iconset" -o "$build_root/Brand/Studio.icns"
+mkdir -p "$build_root/Brand/Compiled"
+xcrun actool "$build_root/Brand/Studio.icon" \
+    --compile "$build_root/Brand/Compiled" --app-icon Studio \
+    --platform macosx --minimum-deployment-target 26.0 \
+    --output-partial-info-plist "$build_root/Brand/Compiled/icon-info.plist" \
+    --output-format human-readable-text
+bash "$repo_root/scripts/test-icon-appearances.sh" "$build_root/Brand/Studio.icon" "$build_root/Brand/Previews"
 swift build --package-path "$repo_root" --scratch-path "$build_root" -c release --product Studio
 bin_dir="$(swift build --package-path "$repo_root" --scratch-path "$build_root" -c release --show-bin-path)"
 
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/Runtime" "$app/Contents/Resources/Notices"
 mkdir -p "$app/Contents/Resources/Brand"
 cp "$build_root/Brand/CBKMark.png" "$build_root/Brand/CBKLogo.png" "$app/Contents/Resources/Brand/"
-cp "$build_root/Brand/Studio.icns" "$app/Contents/Resources/Studio.icns"
+cp "$build_root/Brand/Compiled/Studio.icns" "$build_root/Brand/Compiled/Assets.car" "$app/Contents/Resources/"
 cp "$bin_dir/Studio" "$app/Contents/MacOS/Studio"
 binary="$app/Contents/MacOS/Studio"
 # Resolve Sparkle from the signed bundle, never the development build cache.
