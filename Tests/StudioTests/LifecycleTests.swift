@@ -148,12 +148,41 @@ private actor FakeStackRuntime: StackRuntime {
     func releaseStop() { holdStop = false; stopGate?.resume(); stopGate = nil }
     func emitOldEvent() async { await callbacks.first?(.phase(.failed("stale callback"))) }
     func emitLog() async { await callbacks.last?(.containerLines("platform", ["fixture service output"])) }
+    func emitDownload() async { await callbacks.last?(.download(StartupDownload())) }
     var startWaiting: Bool { startGate != nil }
     var stopWaiting: Bool { stopGate != nil }
 }
 
 @MainActor private func fixture(_ runtime: FakeStackRuntime) -> AppModel {
     AppModel(runtime: runtime, resources: { (URL(filePath: "/unused-kernel"), URL(filePath: "/unused-data")) })
+}
+
+@Test @MainActor func startupDownloadCannotLeakIntoReadyShutdownOrNextRun() async throws {
+    let runtime = FakeStackRuntime()
+    await runtime.configure(holdStart: true)
+    let model = fixture(runtime)
+    model.start()
+    try await eventually { await runtime.startWaiting }
+    await runtime.emitDownload()
+    #expect(model.startupDownload != nil)
+    await runtime.releaseStart()
+    try await eventually { model.info != nil }
+    #expect(model.startupDownload == nil)
+    await runtime.emitDownload()
+    #expect(model.startupDownload == nil)
+    await runtime.configure(holdStart: true)
+    model.restart()
+    #expect(model.startupDownload == nil)
+    try await eventually { await runtime.startWaiting }
+    await runtime.emitDownload()
+    #expect(model.startupDownload != nil)
+    let shutdown = Task { await model.shutdown() }
+    try await eventually { model.isShuttingDown }
+    #expect(model.startupDownload == nil)
+    await runtime.emitDownload()
+    #expect(model.startupDownload == nil)
+    await runtime.releaseStart()
+    #expect(await shutdown.value)
 }
 
 @Test @MainActor func workspaceShortcutsReuseTheStackAndRequireItToBeReady() async throws {

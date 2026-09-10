@@ -43,7 +43,7 @@ struct CBKLogo: View {
 
 struct StudioLaunchSurface: View {
     let detail: String
-    let progress: Double
+    let download: StartupDownload?
     let services: [(String, String)]
 
     var body: some View {
@@ -55,21 +55,26 @@ struct StudioLaunchSurface: View {
                     Text("Studio").font(.system(size: 30, weight: .semibold))
                 }
                 VStack(spacing: 14) {
-                    HStack(alignment: .firstTextBaseline) {
+                    HStack {
                         Text(detail).lineLimit(2)
-                        Spacer(minLength: 16)
-                        Text("\(Int(progress * 100))%")
-                            .monospacedDigit().contentTransition(.numericText())
-                    }.font(.system(size: 12)).foregroundStyle(.secondary)
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.primary.opacity(0.1))
-                            Capsule().fill(Color(nsColor: StudioBrand.foreground))
-                                .frame(width: geometry.size.width * min(1, max(0, progress)))
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        if download?.fraction != nil {
+                            ProgressView().controlSize(.mini)
+                                .accessibilityHidden(true)
                         }
-                    }.frame(height: 3)
-                        .accessibilityLabel("Startup progress")
-                        .accessibilityValue("\(Int(progress * 100)) percent")
+                    }
+                    // A download's measured progress is separate from startup.
+                    // Native indeterminate animation covers resolving, unpacking,
+                    // verification, and service startup; never invent a percentage.
+                    ProgressView(value: download?.fraction)
+                        .progressViewStyle(.linear)
+                        .tint(Color(nsColor: StudioBrand.foreground))
+                        .accessibilityLabel(detail)
+                    Text(download?.summary ?? " ")
+                        .font(.system(size: 11.5)).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(spacing: 10) {
                         ForEach(services, id: \.0) { service in
                             HStack {

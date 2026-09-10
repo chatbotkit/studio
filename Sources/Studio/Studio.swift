@@ -386,12 +386,14 @@ private final class LocalTCPForwarder: @unchecked Sendable {
 // MARK: - Stack runtime
 
 enum ServicePhase: Equatable {
-    case pending, preparing, waiting, starting, healthy, complete, stopped, failed
+    case pending, downloading, preparing, prepared, waiting, starting, healthy, complete, stopped, failed
 
     var title: String {
         switch self {
-        case .pending: "Pending"
-        case .preparing: "Preparing image"
+        case .pending: "Waiting"
+        case .downloading: "Downloading"
+        case .preparing: "Preparing"
+        case .prepared: "Ready"
         case .waiting: "Waiting"
         case .starting: "Starting"
         case .healthy: "Healthy"
@@ -404,7 +406,7 @@ enum ServicePhase: Equatable {
     var color: Color {
         switch self {
         case .healthy, .complete: .green
-        case .starting, .preparing: .primary
+        case .starting, .preparing, .downloading: .primary
         case .waiting: .yellow
         case .failed: .red
         default: .secondary
@@ -450,6 +452,7 @@ enum RuntimeEvent: Sendable {
     case phase(StackPhase)
     case service(String, ServicePhase)
     case progress(Double, String)
+    case download(StartupDownload?)
     case log(String)
     case containerLines(String, [String])
 }
@@ -518,7 +521,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
         try DiskSafety.require(at: dataRoot, additional: 0)
 
         await event(.phase(.resolving))
-        await event(.progress(0.03, "Resolving OCI Compose artifact"))
+        await event(.progress(0.03, "Checking your workspace"))
         let bundle = try await OCIComposeLoader.load(
             reference: defaultOCIReference,
             cacheRoot: dataRoot.appendingPathComponent("artifacts", isDirectory: true)
@@ -555,12 +558,12 @@ actor PrivateOCIStackRuntime: StackRuntime {
             await event(.log("Reserved loopback service port \(port)"))
         }
         await event(.log("Applied Compose environment for all services (trusted local sign-in: \(platformEnvironment["NEXTAUTH_TRUSTED_SIGNIN"] == "true" ? "enabled" : "not enabled"))"))
-        for plan in plans { await event(.service(plan.name, .preparing)) }
+        for plan in plans { await event(.service(plan.name, .pending)) }
 
         await event(.phase(.pulling))
         let store = try ImageStore(path: dataRoot.appendingPathComponent("images", isDirectory: true))
-        await event(.progress(0.08, "Preparing the private VM runtime"))
-        let initfs = try await prepareInitfs(store: store, at: dataRoot.appendingPathComponent("initfs.ext4"))
+        await event(.progress(0.08, "Preparing startup files"))
+        let initfs = try await prepareInitfs(store: store, at: dataRoot.appendingPathComponent("initfs.ext4"), event: event)
 
         let serviceRoot = dataRoot.appendingPathComponent("services", isDirectory: true)
         try FileManager.default.createDirectory(at: serviceRoot, withIntermediateDirectories: true)
@@ -570,13 +573,20 @@ actor PrivateOCIStackRuntime: StackRuntime {
         for (index, plan) in plans.enumerated() {
             try Task.checkCancellation()
             await event(.progress(0.12 + (Double(index) * 0.075), "Preparing \(plan.name)"))
+            await event(.service(plan.name, .preparing))
             let image: Containerization.Image
             if let cached = try? await store.get(reference: plan.image) {
                 image = cached
             } else {
                 try DiskSafety.require(at: dataRoot, additional: Int64(1.gib()))
-                image = try await store.get(reference: plan.image, pull: true)
+                await event(.service(plan.name, .downloading))
+                await event(.progress(0.12 + (Double(index) * 0.075), "Downloading \(plan.name)"))
+                image = try await StartupDownloadReporter.track(publish: { event(.download($0)) }) { progress in
+                    try await store.pull(reference: plan.image, progress: progress)
+                }
             }
+            await event(.service(plan.name, .preparing))
+            await event(.progress(0.12 + (Double(index) * 0.075), "Preparing \(plan.name)"))
             protectedImages.insert(image.reference)
             try Task.checkCancellation()
             rootfs[plan.name] = try await prepareRootfs(
@@ -594,10 +604,11 @@ actor PrivateOCIStackRuntime: StackRuntime {
                 process.arguments = (imageDocument.config?.entrypoint ?? []) + command
             }
             processConfigs[plan.name] = process
+            await event(.service(plan.name, .prepared))
             await event(.log("Prepared \(plan.name) from \(short(plan.image))"))
         }
 
-        await event(.progress(0.59, "Preparing persistent private volumes"))
+        await event(.progress(0.59, "Preparing your workspace"))
         // v5 and earlier created unjournaled volume images. Keep those files in
         // place as a recoverable backup and start v6 in a crash-resilient,
         // journaled volume namespace.
@@ -696,7 +707,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
 
         do {
             await event(.phase(.creating))
-            await event(.progress(0.65, "Creating one private Linux pod"))
+            await event(.progress(0.65, "Starting Studio"))
             try await pod.create()
             self.pod = pod
             try Task.checkCancellation()
@@ -717,7 +728,7 @@ actor PrivateOCIStackRuntime: StackRuntime {
                 progress: 0.96,
                 attempts: 180
             )
-            await event(.progress(0.985, "Publishing the private platform"))
+            await event(.progress(0.985, "Connecting to your workspace"))
             try await installHTTPBridge(in: pod, hostSocket: hostSocket, ports: bridgePorts, event: event)
             await event(.log("VM socket relay is serving localhost:\(hostPort)"))
 
@@ -895,13 +906,17 @@ actor PrivateOCIStackRuntime: StackRuntime {
         return Data(stdout.text().utf8)
     }
 
-    private func prepareInitfs(store: ImageStore, at path: URL) async throws -> Containerization.Mount {
+    private func prepareInitfs(store: ImageStore, at path: URL, event: @escaping @MainActor @Sendable (RuntimeEvent) -> Void) async throws -> Containerization.Mount {
         if FileManager.default.fileExists(atPath: path.path) {
             return .block(format: "ext4", source: path.path, destination: "/", options: ["ro"])
         }
         try DiskSafety.require(at: path.deletingLastPathComponent(), additional: Int64(512.mib()))
         try await DiskSafety.replace(at: path) { staging in
-            let image = try await store.getInitImage(reference: Self.initImage)
+            await event(.progress(0.08, "Downloading startup files"))
+            let image = try await StartupDownloadReporter.track(publish: { event(.download($0)) }) { progress in
+                try await store.getInitImage(reference: Self.initImage, progress: progress)
+            }
+            await event(.progress(0.08, "Preparing startup files"))
             _ = try await image.initBlock(at: staging, for: .linuxArm)
         }
         return .block(format: "ext4", source: path.path, destination: "/", options: ["ro"])
@@ -1131,6 +1146,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var containerLogs: [ContainerLogEntry] = []
     @Published private(set) var startupProgress = 0.0
     @Published private(set) var startupDetail = "Preparing your workspace"
+    @Published private(set) var startupDownload: StartupDownload?
     @Published private(set) var storageReport: StorageReport?
     @Published private(set) var storageError: String?
     @Published private(set) var storageBusy = false
@@ -1183,6 +1199,7 @@ final class AppModel: ObservableObject {
         events = ["OCI source: \(defaultOCIReference)", "Runtime is private to this app"]
         startupProgress = 0
         startupDetail = "Preparing your workspace"
+        startupDownload = nil
         task = Task {
             defer { if generation == run { task = nil } }
             do {
@@ -1195,12 +1212,14 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 guard generation == run else { return }
                 phase = .ready(info)
+                startupDownload = nil
                 diagnostics?.append(source: "app", message: "Workspace ready")
             } catch is CancellationError {
-                if generation == run { phase = .idle }
+                if generation == run { phase = .idle; startupDownload = nil }
             } catch {
                 guard generation == run else { return }
                 phase = .failed(error.localizedDescription)
+                startupDownload = nil
                 appendContainerLines(service: "runtime", lines: ["Error: \(diagnosticDescription(for: error))"])
                 append("Error: \(error.localizedDescription)")
             }
@@ -1216,6 +1235,7 @@ final class AppModel: ObservableObject {
         phase = .stopping
         startupProgress = 0.02
         startupDetail = "Stopping the current stack"
+        startupDownload = nil
         task = Task {
             defer { if generation == run { task = nil } }
             await previous?.value
@@ -1316,6 +1336,7 @@ final class AppModel: ObservableObject {
         if let shutdownTask { return await shutdownTask.value }
         diagnostics?.append(source: "app", message: "Shutdown started")
         isShuttingDown = true
+        startupDownload = nil
         generation = UUID()
         phase = .stopping
         let previous = task
@@ -1366,9 +1387,13 @@ final class AppModel: ObservableObject {
 
     private func apply(_ event: RuntimeEvent) {
         switch event {
-        case let .phase(value): phase = value
+        case let .phase(value):
+            phase = value
+            if !value.busy { startupDownload = nil }
         case let .service(name, value): services[name] = value
         case let .progress(value, detail): startupProgress = value; startupDetail = detail
+        case let .download(value):
+            if phase.busy { startupDownload = value }
         case let .log(message): append(message)
         case let .containerLines(service, lines): appendContainerLines(service: service, lines: lines)
         }
@@ -1942,7 +1967,7 @@ struct StartupView: View {
     var body: some View {
         StudioLaunchSurface(
             detail: model.startupDetail,
-            progress: model.startupProgress,
+            download: model.startupDownload,
             services: serviceNames.map { ($0, (model.services[$0] ?? .pending).title) }
         )
     }

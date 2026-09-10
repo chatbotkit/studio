@@ -8,6 +8,7 @@ All notable changes to Studio are documented here, following
 
 ### Added
 
+- Show live download progress and ongoing activity during startup, with clearer per-service preparation states.
 - Add the Apache 2.0 license and Studio attribution notice to the repository and app bundle.
 
 ## [0.14.4] - 2026-09-08
