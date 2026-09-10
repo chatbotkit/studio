@@ -6,6 +6,10 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Changed
+
+- Simplify the README footer to match Platform, leaving license information in the repository's license files.
+
 ## [0.15.1] - 2026-09-10
 
 ### Fixed
