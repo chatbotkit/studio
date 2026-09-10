@@ -6,6 +6,8 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-09-10
+
 ### Added
 
 - Show live download progress and ongoing activity during startup, with clearer per-service preparation states.
@@ -145,7 +147,8 @@ All notable changes to Studio are documented here, following
 
 - Sandbox the native application and keep the platform runtime private to Studio, with local port forwarding and a bundled Linux kernel.
 
-[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.4...HEAD
+[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.14.5...HEAD
+[0.14.5]: https://github.com/chatbotkit/studio/compare/v0.14.4...v0.14.5
 [0.14.4]: https://github.com/chatbotkit/studio/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/chatbotkit/studio/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/chatbotkit/studio/compare/v0.14.1...v0.14.2
