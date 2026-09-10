@@ -8,6 +8,7 @@ All notable changes to Studio are documented here, following
 
 ### Changed
 
+- Update the README title and tagline to present Studio as a sovereign AI platform running locally on your desktop.
 - Remove the Docker setup tagline, repetitive server-side Platform promotion, and "Private by design" section from the README.
 - Move README installation instructions above the workspace feature list.
 - Skip automatic CI builds for changes limited to Markdown, documentation, license, and attribution files; explicit release tags still build normally.

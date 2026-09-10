@@ -7,11 +7,11 @@
 
 <br/>
 
-<h1>AI Studio in a Box</h1>
+<h1>AI Platform on your Desktop</h1>
 
 <p>
-  <strong>A complete ChatBotKit workspace running privately<br>
-  inside one native macOS app.</strong>
+  <strong>A modern, sovereign AI workspace<br>
+  running locally on your desktop.</strong>
 </p>
 
 <p>
