@@ -26,7 +26,8 @@
   <a href="https://github.com/chatbotkit/platform#run-it"><strong>Deploy Platform</strong></a> ·
   <a href="./docs/getting-started.md"><strong>Get started</strong></a> ·
   <a href="./docs/README.md"><strong>Documentation</strong></a> ·
-  <a href="./docs/architecture.md"><strong>Architecture</strong></a>
+  <a href="./docs/architecture.md"><strong>Architecture</strong></a> ·
+  <a href="./CONTRIBUTING.md"><strong>Contributing</strong></a>
 </p>
 
 </div>
@@ -35,7 +36,7 @@
   <img width="2064" alt="ChatBotKit Studio" src="https://github.com/user-attachments/assets/f9350253-1c01-42d2-826b-a2552542518c" />
 </p>
 
-Studio brings the breadth of the [ChatBotKit Platform](https://github.com/chatbotkit/platform) to your Mac. Build agents, manage knowledge, connect model providers, and test complete experiences while the platform runs in a private Linux VM owned by the app.
+Studio brings the breadth of the [CBK Platform](https://github.com/chatbotkit/platform) to your Mac. Build agents, manage knowledge, connect model providers, and test complete experiences while the platform runs in a private Linux VM owned by the app.
 
 ## Install Studio
 
@@ -61,5 +62,6 @@ Studio requires an Apple silicon Mac running macOS 26 or later. The first launch
 - [Architecture and container runtime](docs/architecture.md)
 - [Security and privacy](docs/security.md)
 - [Development and testing](docs/development.md)
+- [Contributing](CONTRIBUTING.md)
 - [Release setup](docs/releases.md)
 - [Changelog](CHANGELOG.md)

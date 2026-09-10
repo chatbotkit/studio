@@ -8,6 +8,8 @@ All notable changes to Studio are documented here, following
 
 ### Changed
 
+- Use CBK Platform naming in the README.
+- Add a Studio contribution guide and link it from the README header and documentation list to match Platform.
 - Update the README title and tagline to present Studio as a sovereign AI platform running locally on your desktop.
 - Remove the Docker setup tagline, repetitive server-side Platform promotion, and "Private by design" section from the README.
 - Move README installation instructions above the workspace feature list.
