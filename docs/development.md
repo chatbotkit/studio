@@ -65,4 +65,12 @@ Generated files belong in `.build/` and `dist/`; neither is committed. VM disks,
 
 Pushes to `main` and pull requests run tests, assemble the app, verify its signature and security boundary, and retain a packaging-inspection ZIP for seven days. CI uses GitHub's Apple silicon `macos-26` runner and logs the selected toolchain.
 
+Automatic CI skips changes limited to Markdown files, `docs/`, `LICENSE`, and
+`NOTICE`. Mixed documentation and code changes still run the full build, as do
+manual CI runs. Workflow changes also trigger CI, including the initial addition
+of these filters. Explicit version tags always run the release workflow and
+include the current license and documentation files where packaging uses them.
+If CI becomes a required pull-request check, account for documentation-only
+workflows being skipped in the branch protection rules.
+
 Unsigned CI artifacts are for inspection only. Public builds follow the tag, Developer ID signing, notarization, stapling, ZIP, checksum, and signed appcast workflow described in [Release setup](releases.md).
