@@ -6,6 +6,10 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Fixed
+
+- Show an explicit download percentage and promptly switch between measured progress and preparation activity, including when download callbacks pause.
+
 ## [0.14.5] - 2026-09-10
 
 ### Added

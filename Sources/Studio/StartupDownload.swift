@@ -23,6 +23,10 @@ struct StartupDownload: Equatable, Sendable {
         return Double(completedBytes) / Double(totalBytes)
     }
 
+    var percentage: String? {
+        fraction.map { "\(Int(($0 * 100).rounded(.down)))%" }
+    }
+
     var summary: String {
         guard totalBytes > 0 || completedBytes > 0 else { return "Connecting…" }
         let completed = ByteCountFormatter.string(fromByteCount: completedBytes, countStyle: .file)
@@ -44,26 +48,60 @@ struct StartupDownload: Equatable, Sendable {
 actor StartupDownloadReporter {
     private var snapshot = StartupDownload()
     private var lastPublication: ContinuousClock.Instant?
+    private var lastPublishedSnapshot: StartupDownload?
+    private var pendingPublication: Task<Void, Never>?
     private var finished = false
     private let publish: @MainActor @Sendable (StartupDownload?) -> Void
+    private let sleep: @Sendable (Duration) async throws -> Void
 
-    init(publish: @escaping @MainActor @Sendable (StartupDownload?) -> Void) {
+    init(
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        publish: @escaping @MainActor @Sendable (StartupDownload?) -> Void
+    ) {
+        self.sleep = sleep
         self.publish = publish
     }
 
     func receive(_ events: [ProgressEvent], now: ContinuousClock.Instant = .now) async {
         guard !finished else { return }
         snapshot.apply(events)
+        guard snapshot != lastPublishedSnapshot else { return }
         // Layers arrive concurrently and can report every network buffer.
-        // Aggregate off the main actor and update the UI at most five times/sec.
-        if let lastPublication, now - lastPublication < .milliseconds(200) { return }
+        // Throttle byte updates, but never delay switching between activity and
+        // measured progress. Deliver the trailing update even if callbacks stop.
+        let modeChanged = (snapshot.fraction != nil) != (lastPublishedSnapshot?.fraction != nil)
+        if let lastPublication, !modeChanged, now - lastPublication < .milliseconds(200) {
+            if pendingPublication == nil {
+                let delay = Duration.milliseconds(200) - (now - lastPublication)
+                pendingPublication = Task { [weak self, sleep] in
+                    do { try await sleep(delay) } catch { return }
+                    guard !Task.isCancelled else { return }
+                    await self?.publishPending()
+                }
+            }
+            return
+        }
+        await publishCurrent(now: now)
+    }
+
+    private func publishPending() async {
+        guard !finished, snapshot != lastPublishedSnapshot else { return }
+        await publishCurrent(now: .now)
+    }
+
+    private func publishCurrent(now: ContinuousClock.Instant) async {
+        pendingPublication?.cancel()
+        pendingPublication = nil
         lastPublication = now
+        lastPublishedSnapshot = snapshot
         await publish(snapshot)
     }
 
     func finish() async {
         guard !finished else { return }
         finished = true
+        pendingPublication?.cancel()
+        pendingPublication = nil
         await publish(nil)
     }
 

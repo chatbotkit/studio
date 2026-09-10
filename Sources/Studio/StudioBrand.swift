@@ -59,17 +59,16 @@ struct StudioLaunchSurface: View {
                         Text(detail).lineLimit(2)
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         Spacer(minLength: 12)
-                        if download?.fraction != nil {
-                            ProgressView().controlSize(.mini)
-                                .accessibilityHidden(true)
+                        if let percentage = download?.percentage {
+                            Text(percentage)
+                                .font(.system(size: 12)).monospacedDigit()
+                                .foregroundStyle(.secondary)
                         }
                     }
                     // A download's measured progress is separate from startup.
                     // Native indeterminate animation covers resolving, unpacking,
                     // verification, and service startup; never invent a percentage.
-                    ProgressView(value: download?.fraction)
-                        .progressViewStyle(.linear)
-                        .tint(Color(nsColor: StudioBrand.foreground))
+                    StudioStartupProgressBar(fraction: download?.fraction)
                         .accessibilityLabel(detail)
                     Text(download?.summary ?? " ")
                         .font(.system(size: 11.5)).monospacedDigit()
@@ -87,5 +86,21 @@ struct StudioLaunchSurface: View {
                 }.frame(width: 360)
             }.padding(40)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct StudioStartupProgressBar: View {
+    let fraction: Double?
+
+    var body: some View {
+        Group {
+            if let fraction {
+                ProgressView(value: fraction, total: 1)
+            } else {
+                ProgressView()
+            }
+        }
+        .progressViewStyle(.linear)
+        .tint(Color(nsColor: StudioBrand.foreground))
     }
 }
