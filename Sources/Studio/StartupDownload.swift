@@ -29,13 +29,26 @@ struct StartupDownload: Equatable, Sendable {
 
     var summary: String {
         guard totalBytes > 0 || completedBytes > 0 else { return "Connecting…" }
-        let completed = ByteCountFormatter.string(fromByteCount: completedBytes, countStyle: .file)
+        let completed = formattedSize(completedBytes)
         if totalBytes > completedBytes {
-            return "\(completed) of \(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file))"
+            return "\(completed) of \(formattedSize(totalBytes))"
         }
         // The importer also counts reused layers: do not label this as network
         // traffic or derive a download speed from it.
         return "\(completed) ready"
+    }
+
+    private func formattedSize(_ bytes: Int64) -> String {
+        guard bytes >= 1_000 else { return "\(bytes.formatted()) bytes" }
+        let units = ["KB", "MB", "GB", "TB", "PB", "EB"]
+        var value = Double(bytes) / 1_000
+        var unit = 0
+        while value >= 1_000, unit < units.count - 1 {
+            value /= 1_000
+            unit += 1
+        }
+        // Keep a trailing zero so whole sizes occupy the same width as fractions.
+        return "\(value.formatted(.number.precision(.fractionLength(1)))) \(units[unit])"
     }
 
     private func adding(_ bytes: Int64, to value: Int64) -> Int64 {
