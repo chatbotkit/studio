@@ -82,10 +82,11 @@ func externalComposeEnvironmentSourcesAreRejected(_ field: String) {
     #expect(throws: ConfigurationError.self) { try ComposeEnvironment.load("services: {}\n---\nservices: {}") }
 }
 
-@Test func incompatibleNativePortsAreRejected() throws {
+@Test(arguments: ["0", "65536", "-1", "+9000", "abc", "", " 9000"])
+func invalidInternalPortsAreRejected(_ value: String) throws {
     let yaml = try studioFixture()
-    for field in ["PORT: 3000", "RELAY_PORT: 3001"] {
+    for field in ["      PORT: ${PLATFORM_PORT:-31000}", "      RELAY_PORT: ${RELAY_PORT:-31001}"] {
         #expect(yaml.contains(field))
-        #expect(throws: ConfigurationError.self) { try PrivateStackEnvironment.load(yaml.replacingOccurrences(of: field, with: field.components(separatedBy: ":")[0] + ": '9999'"), sitePort: 31000, relayPort: 31001, storagePort: 31900) }
+        #expect(throws: ConfigurationError.self) { try PrivateStackEnvironment.load(yaml.replacingOccurrences(of: field, with: field.components(separatedBy: ":")[0] + ": '\(value)'"), sitePort: 31000, relayPort: 31001, storagePort: 31900) }
     }
 }

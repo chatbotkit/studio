@@ -126,6 +126,7 @@ public enum GarageConfiguration {
     public struct Resolved: Equatable, Sendable {
         public let configuration: String
         public let s3Port: UInt16
+        public let adminPort: UInt16
     }
 
     public static func extract(from yaml: String, variables: [String: String]) throws -> Resolved {
@@ -161,6 +162,7 @@ public enum GarageConfiguration {
         }
         let resolved = try ComposeInterpolation.resolve(collected.joined(separator: "\n") + "\n", variables: variables)
         var s3Port: UInt16?
+        var adminPort: UInt16?
         for section in ["s3_api", "admin"] {
             let sectionPattern = "(?ms)^\\[\(section)\\][^\\[]*?^api_bind_addr\\s*=\\s*\"([^\"]+)\""
             let regex = try NSRegularExpression(pattern: sectionPattern)
@@ -173,11 +175,14 @@ public enum GarageConfiguration {
                   ["[::]:\(port)", "0.0.0.0:\(port)", "127.0.0.1:\(port)"].contains(String(resolved[addressRange])) else {
                 throw ConfigurationError("Garage configuration: \(section).api_bind_addr must use a valid port with a supported bind address.")
             }
-            if section == "admin", port != 3903 { throw ConfigurationError("Garage configuration: admin.api_bind_addr must use internal port 3903 with a supported bind address.") }
+            if section == "admin" { adminPort = port }
             if section == "s3_api" { s3Port = port }
         }
         guard s3Port == storagePort else { throw ConfigurationError("Garage S3 port does not match the allocated STORAGE_PORT.") }
-        return Resolved(configuration: resolved, s3Port: storagePort)
+        guard let adminPort, adminPort != storagePort else {
+            throw ConfigurationError("Garage declares conflicting S3 and admin listeners.")
+        }
+        return Resolved(configuration: resolved, s3Port: storagePort, adminPort: adminPort)
     }
 }
 

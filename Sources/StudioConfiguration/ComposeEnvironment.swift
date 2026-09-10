@@ -29,7 +29,8 @@ public struct ComposeEnvironment: Sendable, Equatable {
         let root = try root(yaml, budget: &budget)
         let environments = try environments(from: root, variables: variables, budget: &budget)
         let manifest = try StackManifest.load(root["x-cbk"], variables: variables, services: Set(environments.keys), budget: &budget)
-        return ResolvedStackConfiguration(environments: environments, manifest: manifest)
+        let healthChecks = try ComposeHealthCheck.load(root["services"]!, variables: variables, budget: &budget)
+        return ResolvedStackConfiguration(environments: environments, manifest: manifest, healthChecks: healthChecks)
     }
 
     private static func root(_ yaml: String, budget: inout Int) throws -> [String: Node] {
@@ -131,10 +132,8 @@ public enum PrivateStackEnvironment {
     public static func load(_ yaml: String, sitePort: UInt16, relayPort: UInt16, storagePort: UInt16) throws -> ResolvedStackConfiguration {
         let result = try ComposeEnvironment.loadStack(yaml, variables: variables(sitePort: sitePort, relayPort: relayPort, storagePort: storagePort))
         try result.manifest.validate(ports: .init(site: sitePort, relay: relayPort, storage: storagePort))
-        guard let platform = result.environments["platform"], platform.values["PORT"] == "3000",
-              platform.values["RELAY_PORT"] == nil || platform.values["RELAY_PORT"] == "3001" else {
-            throw ConfigurationError("The private runtime requires platform port 3000 and relay port 3001.")
-        }
+        let platform = result.environments["platform"]!
+        _ = try result.platformPorts()
         // These endpoints are used inside and outside the shared pod. A literal
         // environment override must not silently disagree with the manifest.
         let expected = ["SITE_URL": "site", "NEXTAUTH_URL": "site", "APP_MAIN_ORIGIN": "apps", "APP_LABS_ORIGIN": "labs", "RELAY_URL": "relay", "STORAGE_ENDPOINT": "storage"]

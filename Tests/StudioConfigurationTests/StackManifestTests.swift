@@ -61,7 +61,7 @@ func manifestRejectsInvalidOrCollidingPublishedPorts(_ port: String) throws {
     #expect(throws: ConfigurationError.self) { try manifest.validate(ports: .init(site: 31002, relay: 31001, storage: 31900)) }
 }
 
-@Test func fallbackPortPropagatesWithoutChangingAuxiliaryPortsOrContainerPorts() throws {
+@Test func fallbackPortPropagatesToTheDeclaredContainerPortWithoutChangingAuxiliaryPorts() throws {
     let yaml = try studioFixture().replacingOccurrences(of: "cbk-apps.localhost", with: "custom-apps.localhost")
     let resolved = try PrivateStackEnvironment.load(yaml, sitePort: 31002, relayPort: 31001, storagePort: 31900)
     let platform = try #require(resolved.environments["platform"]?.values)
@@ -70,8 +70,8 @@ func manifestRejectsInvalidOrCollidingPublishedPorts(_ port: String) throws {
     #expect(platform["APP_MAIN_ORIGIN"] == "http://custom-apps.localhost:31002")
     #expect(platform["RELAY_URL"] == "http://127.0.0.1:31001")
     #expect(platform["STORAGE_ENDPOINT"] == "http://127.0.0.1:31900")
-    #expect(platform["PORT"] == "3000")
-    #expect(platform["RELAY_PORT"] == "3001")
+    #expect(platform["PORT"] == "31002")
+    #expect(platform["RELAY_PORT"] == "31001")
     #expect(resolved.environments["garage-init"]?.values["GARAGE_S3_URL"] == "http://garage:31900")
     #expect(resolved.manifest.url(for: "apps")?.host == "custom-apps.localhost")
     #expect(resolved.manifest.hosts.contains("cbk-space.localhost"))
@@ -83,7 +83,7 @@ func manifestRejectsInvalidOrCollidingPublishedPorts(_ port: String) throws {
     let vars = PrivateStackEnvironment.variables(sitePort: 31002, relayPort: 31001, storagePort: 32000)
     #expect(try GarageConfiguration.extract(from: yaml, variables: vars).s3Port == 32000)
     #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: yaml.replacingOccurrences(of: "[::]:${STORAGE_PORT:-31900}", with: "[::]:31901"), variables: vars) }
-    #expect(throws: ConfigurationError.self) { try GarageConfiguration.extract(from: yaml.replacingOccurrences(of: "[::]:3903", with: "[::]:3904"), variables: vars) }
+    #expect(try GarageConfiguration.extract(from: yaml.replacingOccurrences(of: "[::]:3903", with: "[::]:3904"), variables: vars).adminPort == 3904)
 }
 
 @Test func manifestOriginsAreBoundToDeclaredHostsPortsAndApexBoundaries() throws {

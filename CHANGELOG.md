@@ -6,6 +6,10 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Fixed
+
+- Start correctly when the upstream stack changes its internal ports, and use its declared health checks instead of hard-coded desktop defaults.
+
 ## [0.15.0] - 2026-09-10
 
 ### Changed

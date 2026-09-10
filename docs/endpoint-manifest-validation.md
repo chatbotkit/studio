@@ -1,5 +1,9 @@
 # Endpoint manifest addressing — 2026-09-10
 
+> Historical validation of the artifact used for 0.15.0. Later that day,
+> upstream changed its internal listeners. The fixture now tracks that newer
+> artifact; see [the port-regression follow-up](upstream-runtime-validation.md).
+
 Studio now resolves the version 1 `x-cbk` manifest alongside the service
 environments. Published addresses are no longer inferred from fixed native
 hostnames or ports. The adapter remains specific to the Studio stack; it does

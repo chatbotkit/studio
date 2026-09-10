@@ -4,6 +4,41 @@ import Yams
 public struct ResolvedStackConfiguration: Equatable, Sendable {
     public let environments: [String: ComposeEnvironment]
     public let manifest: StackManifest
+    public let healthChecks: [String: [String]]
+
+    /// Container listeners come from the resolved service configuration, not
+    /// from published port numbers or defaults compiled into the desktop app.
+    public func platformPorts() throws -> (site: UInt16, relay: UInt16) {
+        func port(_ variable: String) throws -> UInt16 {
+            guard let value = environments["platform"]?.values[variable],
+                  !value.isEmpty, value.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let port = UInt16(value), port > 0 else {
+                throw ConfigurationError("The stack must declare a valid platform \(variable).")
+            }
+            return port
+        }
+        let ports = try (site: port("PORT"), relay: port("RELAY_PORT"))
+        guard ports.site != ports.relay else {
+            throw ConfigurationError("The stack declares conflicting platform and relay listeners.")
+        }
+        return ports
+    }
+
+    public func bridgePorts(garage: GarageConfiguration.Resolved) throws -> [UInt16] {
+        let platform = try platformPorts()
+        let listeners = [platform.site, platform.relay, garage.s3Port, garage.adminPort]
+        guard Set(listeners).count == listeners.count else {
+            throw ConfigurationError("The stack declares conflicting platform, relay or storage listeners.")
+        }
+        return [platform.site, platform.relay, garage.s3Port]
+    }
+
+    public func healthCheck(for service: String) throws -> [String] {
+        guard let command = healthChecks[service] else {
+            throw ConfigurationError("The stack is missing its \(service) health check.")
+        }
+        return command
+    }
 }
 
 public struct StackPorts: Equatable, Sendable {
@@ -104,8 +139,7 @@ public struct StackManifest: Codable, Equatable, Sendable {
 
     public func validate(ports: StackPorts) throws {
         guard version == 1, ports.site > 0, ports.relay > 0, ports.storage > 0,
-              Set([ports.site, ports.relay, ports.storage]).count == 3,
-              ![3000, 3001, 3903].contains(ports.storage) else {
+              Set([ports.site, ports.relay, ports.storage]).count == 3 else {
             throw ConfigurationError("Endpoint manifest contains conflicting ports or an unsupported version.")
         }
         for (name, entry) in endpoints {

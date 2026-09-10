@@ -547,15 +547,18 @@ actor PrivateOCIStackRuntime: StackRuntime {
         let resolved = try PrivateStackEnvironment.load(bundle.composeYAML, sitePort: hostPort, relayPort: preferred.relay, storagePort: preferred.storage)
         let manifest = resolved.manifest
         let garage = try GarageConfiguration.extract(from: bundle.composeYAML, variables: PrivateStackEnvironment.variables(sitePort: hostPort, relayPort: preferred.relay, storagePort: preferred.storage))
+        let bridgePorts = try resolved.bridgePorts(garage: garage)
+        // Validate the artifact's probes before downloading images or starting
+        // the VM. Probe commands run inside containers, never on the host.
+        let redisHealth = try resolved.healthCheck(for: "redis")
+        let qdrantHealth = try resolved.healthCheck(for: "qdrant")
+        let garageHealth = try resolved.healthCheck(for: "garage")
+        let platformHealth = try resolved.healthCheck(for: "platform")
         let garageFile = dataRoot.appendingPathComponent("garage.toml")
         try Data(garage.configuration.utf8).write(to: garageFile, options: .atomic)
         let plans = try makePlans(bundle: bundle, environments: resolved.environments, garageFile: garageFile)
         let platformEnvironment = plans.first { $0.name == "platform" }!.environment.values
-        guard let siteTarget = platformEnvironment["PORT"].flatMap(UInt16.init),
-              let relayTarget = platformEnvironment["RELAY_PORT"].flatMap(UInt16.init) else {
-            throw AppRuntimeError("The platform is missing its container ports.")
-        }
-        let bridgePorts: [UInt16] = [siteTarget, relayTarget, garage.s3Port]
+        let relayTarget = bridgePorts[1]
         for (port, target) in [(preferred.relay, relayTarget), (preferred.storage, garage.s3Port)] {
             let auxiliary = LocalTCPForwarder()
             _ = try await auxiliary.start(preferredPort: port, targetUnixSocketPath: hostSocket.path + ".\(target)", allowFallback: false)
@@ -721,14 +724,14 @@ actor PrivateOCIStackRuntime: StackRuntime {
             await event(.phase(.starting))
             try await runOneShot("network-init", in: pod, event: event, progress: 0.69)
             try await runOneShot("db-init", in: pod, event: event, progress: 0.72)
-            try await startHealthy("redis", in: pod, command: ["redis-cli", "ping"], event: event, progress: 0.77)
-            try await startHealthy("qdrant", in: pod, command: ["bash", "-c", ": > /dev/tcp/127.0.0.1/6333"], event: event, progress: 0.82)
-            try await startHealthy("garage", in: pod, command: ["/garage", "-c", "/etc/garage.toml", "status"], event: event, progress: 0.87)
+            try await startHealthy("redis", in: pod, command: redisHealth, event: event, progress: 0.77)
+            try await startHealthy("qdrant", in: pod, command: qdrantHealth, event: event, progress: 0.82)
+            try await startHealthy("garage", in: pod, command: garageHealth, event: event, progress: 0.87)
             try await runOneShot("garage-init", in: pod, event: event, progress: 0.91)
             try await startHealthy(
                 "platform",
                 in: pod,
-                command: ["node", "-e", "fetch('http://127.0.0.1:\(siteTarget)/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"],
+                command: platformHealth,
                 event: event,
                 progress: 0.96,
                 attempts: 180
