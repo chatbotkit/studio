@@ -6,6 +6,10 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+### Added
+
+- Add the CBK community code of conduct from Platform.
+
 ### Fixed
 
 - Keep one decimal place in download sizes, including trailing zeros, to reduce layout shifts during startup.
