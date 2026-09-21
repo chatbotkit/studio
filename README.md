@@ -33,7 +33,7 @@
 </div>
 
 <p align="center">
-  <img width="2064" alt="ChatBotKit Studio" src="https://github.com/user-attachments/assets/f9350253-1c01-42d2-826b-a2552542518c" />
+  <img width="4281" height="2676" alt="image" src="https://github.com/user-attachments/assets/64aa0234-3d78-4ba5-8c55-156e6ed9021f" />
 </p>
 
 Studio brings the breadth of the [CBK Platform](https://github.com/chatbotkit/platform) to your Mac. Build agents, manage knowledge, connect model providers, and test complete experiences while the platform runs in a private Linux VM owned by the app.
