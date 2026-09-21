@@ -6,6 +6,8 @@ All notable changes to Studio are documented here, following
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-21
+
 ### Added
 
 - Add the CBK community code of conduct from Platform.
@@ -188,7 +190,8 @@ All notable changes to Studio are documented here, following
 
 - Sandbox the native application and keep the platform runtime private to Studio, with local port forwarding and a bundled Linux kernel.
 
-[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/chatbotkit/studio/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/chatbotkit/studio/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/chatbotkit/studio/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/chatbotkit/studio/compare/v0.14.5...v0.15.0
 [0.14.5]: https://github.com/chatbotkit/studio/compare/v0.14.4...v0.14.5
