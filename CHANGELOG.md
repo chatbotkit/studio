@@ -21,6 +21,7 @@ All notable changes to Studio are documented here, following
 ### Changed
 
 - Show the available app version in Settings → Update and turn Check for Updates into Install Update once one is found; show the running stack version alongside it.
+- Add shared agent skills for releases, test-first changes, UI copy, helper visibility, and instruction-file links, and add concurrent-edit and commit rules to `AGENTS.md`.
 - Use CBK Platform naming in the README.
 - Add a Studio contribution guide and link it from the README header and documentation list to match Platform.
 - Update the README title and tagline to present Studio as a sovereign AI platform running locally on your desktop.
