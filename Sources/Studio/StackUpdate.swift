@@ -20,6 +20,13 @@ enum StackUpdatePreferences {
     static let automaticChecksKey = "StudioStackUpdateChecksEnabled"
     static let interval: Duration = .seconds(6 * 60 * 60)
 
+    /// A digest prefix that is short enough for a settings row yet still
+    /// distinguishes one published stack from the next.
+    static func short(_ digest: String) -> String {
+        let hex = digest.split(separator: ":").last.map(String.init) ?? digest
+        return String(hex.prefix(12))
+    }
+
     static func automaticChecks(in defaults: UserDefaults) -> Bool {
         // On unless the user has explicitly turned it off.
         defaults.object(forKey: automaticChecksKey) as? Bool ?? true

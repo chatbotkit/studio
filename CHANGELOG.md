@@ -10,14 +10,17 @@ All notable changes to Studio are documented here, following
 
 - Add the CBK community code of conduct from Platform.
 - Detect a newly published workspace stack while Studio is open and offer to restart into it. Automatic checks are on by default and can be turned off, or run on demand, in Settings → Update.
+- Badge the Settings Update tab when an app or stack update is waiting, checking both whenever Settings opens.
 
 ### Fixed
 
 - Keep one decimal place in download sizes, including trailing zeros, to reduce layout shifts during startup.
+- Avoid scroll indicators flashing while the Settings window resizes between tabs on macOS 27.
 - Show the startup screen again while the stack restarts instead of leaving the window blank; it stays dismissed during quit and page reloads.
 
 ### Changed
 
+- Show the available app version in Settings → Update and turn Check for Updates into Install Update once one is found; show the running stack version alongside it.
 - Use CBK Platform naming in the README.
 - Add a Studio contribution guide and link it from the README header and documentation list to match Platform.
 - Update the README title and tagline to present Studio as a sovereign AI platform running locally on your desktop.

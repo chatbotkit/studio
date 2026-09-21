@@ -70,7 +70,7 @@ Local platform pages can request microphone use. Studio grants the page-level re
 
 ## Updates
 
-**Studio → Check for Updates** and **Settings → Update** use signed application updates. Automatic checks default to daily; automatic installation is off by default. Save work before installing. Studio waits for active stack operations and confirms that the VM has stopped before replacing and relaunching the app.
+**Studio → Check for Updates** and **Settings → Update** use signed application updates. Automatic checks default to daily; automatic installation is off by default. Opening Settings checks quietly for both app and stack updates; the Update tab shows a badge counting the ones that are waiting, and **Check for Updates** becomes **Install Update** once a newer app version is found. Save work before installing. Studio waits for active stack operations and confirms that the VM has stopped before replacing and relaunching the app.
 
 Development builds cannot update themselves. Application updates do not delete the private platform data or independently change the OCI stack tag.
 

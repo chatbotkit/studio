@@ -10,6 +10,8 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     @Published private(set) var automaticallyChecks = false
     @Published private(set) var automaticallyDownloads = false
     @Published private(set) var allowsAutomaticUpdates = false
+    /// The newer version Sparkle last found, from any check. Skipped versions are not found.
+    @Published private(set) var availableVersion: String?
     let preparation = UpdatePreparation(
         busy: { AppModel.shared.phase.busy || AppModel.shared.storageBusy },
         shutdown: { await AppModel.shared.shutdown() },
@@ -36,6 +38,10 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     }
 
     func checkForUpdates() { if started { controller.checkForUpdates(nil) } }
+    /// Asks Sparkle whether an update exists without offering it.
+    func probeForUpdate() {
+        if started, controller.updater.canCheckForUpdates { controller.updater.checkForUpdateInformation() }
+    }
     func validateConfigurationForSmokeTest() throws {
         guard RuntimeSmokeTest.requested else { return }
         // Only the separately identified diagnostic calls this. Validate the
@@ -54,6 +60,14 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         return true
     }
 
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        availableVersion = item.displayVersionString
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
+        availableVersion = nil
+    }
+
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         preparation.cancel()
         if preparingInstall { AppModel.shared.recoverFromAbortedUpdate() }
@@ -69,18 +83,38 @@ struct CheckForUpdatesButton: View {
     }
 }
 
+/// The update button on the Settings Update tab. Sparkle's user-initiated check
+/// offers the update it finds, so one action serves both titles.
+struct UpdateSettingsButton: View {
+    let availableVersion: String?
+    let canCheck: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(Self.title(availableVersion: availableVersion), action: action).disabled(!canCheck)
+    }
+
+    static func title(availableVersion: String?) -> String {
+        availableVersion == nil ? "Check for Updates…" : "Install Update…"
+    }
+}
+
 struct UpdatesSettingsView: View {
     @ObservedObject private var updater = AppUpdater.shared
     @ObservedObject private var preparation = AppUpdater.shared.preparation
     @ObservedObject var model: AppModel
 
-    private var stackStatus: String {
+    private var runningStack: String {
+        guard let digest = model.info?.resolvedDigest else { return "Not running" }
+        return StackUpdatePreferences.short(digest)
+    }
+
+    private var stackStatus: String? {
         if model.stackUpdateChecking { return "Checking…" }
         switch model.stackUpdate {
-        case .unchecked: return model.info == nil ? "Available once the workspace is running" : "Up to date at startup"
-        case let .upToDate(date): return "Up to date, checked \(date.formatted(date: .omitted, time: .shortened))"
-        case .available: return "A new version is available"
-        case let .failed(message): return "Couldn’t check: \(message)"
+        case .unchecked, .available: return nil
+        case let .upToDate(date): return "Up to date — checked \(date.formatted(date: .omitted, time: .shortened))"
+        case let .failed(message): return "Couldn’t check — \(message)"
         }
     }
 
@@ -90,7 +124,27 @@ struct UpdatesSettingsView: View {
                 LabeledContent("Installed Version") {
                     Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
                 }
-                CheckForUpdatesButton()
+                if let version = updater.availableVersion {
+                    Text("Update available — \(version)").font(.caption).foregroundStyle(.orange)
+                }
+                UpdateSettingsButton(availableVersion: updater.availableVersion, canCheck: updater.canCheckForUpdates,
+                                     action: updater.checkForUpdates)
+            }
+
+            Section {
+                LabeledContent("Running Stack") { Text(runningStack).monospaced() }
+                if let digest = model.stackUpdate.availableDigest {
+                    Text("Update available — \(StackUpdatePreferences.short(digest))").font(.caption).foregroundStyle(.orange)
+                } else if let stackStatus {
+                    Text(stackStatus).font(.caption).foregroundStyle(.secondary)
+                }
+                if model.stackUpdate.availableDigest != nil {
+                    Button("Restart Stack to Update") { model.restart() }
+                        .disabled(model.phase.busy)
+                } else {
+                    Button("Check for Stack Updates") { model.checkForStackUpdate() }
+                        .disabled(model.info == nil || model.stackUpdateChecking)
+                }
             }
 
             Section {
@@ -103,16 +157,6 @@ struct UpdatesSettingsView: View {
                     set: { value in updater.setAutomaticDownloads(value) }
                 ))
                 .disabled(!updater.allowsAutomaticUpdates)
-            }
-            Section {
-                LabeledContent("Stack") { Text(stackStatus).foregroundStyle(.secondary) }
-                if model.stackUpdate.availableDigest != nil {
-                    Button("Restart Stack to Update") { model.restart() }
-                        .disabled(model.phase.busy)
-                } else {
-                    Button("Check for Stack Updates") { model.checkForStackUpdate() }
-                        .disabled(model.info == nil || model.stackUpdateChecking)
-                }
                 Toggle("Automatically check for stack updates", isOn: Binding(
                     get: { model.automaticallyChecksForStackUpdates },
                     set: { value in model.setAutomaticStackUpdateChecks(value) }
