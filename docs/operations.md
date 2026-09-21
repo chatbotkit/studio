@@ -73,3 +73,11 @@ Local platform pages can request microphone use. Studio grants the page-level re
 **Studio → Check for Updates** and **Settings → Update** use signed application updates. Automatic checks default to daily; automatic installation is off by default. Save work before installing. Studio waits for active stack operations and confirms that the VM has stopped before replacing and relaunching the app.
 
 Development builds cannot update themselves. Application updates do not delete the private platform data or independently change the OCI stack tag.
+
+### Stack updates
+
+The workspace stack is published separately at `platform-studio:latest`. Studio resolves that tag on every start, so launching the app or choosing **Stack → Restart Stack** always runs the newest published stack.
+
+While a workspace stays open, Studio compares the tag's manifest digest with the running digest every six hours. The check reads one registry manifest reference; it downloads no layers and changes nothing. When the tag has moved, Studio offers to restart once, **Stack → Restart Stack** becomes **Restart Stack to Update**, and **Settings → Update** shows the update. Restarting applies it through the normal verified load path and keeps the private platform data. Lookup failures, such as being offline, are reported only in Settings.
+
+**Settings → Update → Automatically check for stack updates** is on by default. Turning it off stops the periodic check and the prompt; **Check for Stack Updates** still works on demand.

@@ -108,7 +108,7 @@ struct OCIStackBundle: Sendable {
 }
 
 enum OCIComposeLoader {
-    static func load(reference source: String, cacheRoot: URL) async throws -> OCIStackBundle {
+    private static func registry(for source: String) throws -> (client: RegistryClient, repository: String, tag: String) {
         guard source.hasPrefix("oci://") else {
             throw AppRuntimeError("The stack source must begin with oci://")
         }
@@ -120,10 +120,19 @@ enum OCIComposeLoader {
         guard reference.digest == nil else {
             throw AppRuntimeError("This prototype expects an OCI tag, not a manifest digest.")
         }
+        return (try RegistryClient(reference: rawReference), reference.path, reference.tag ?? "latest")
+    }
 
-        let client = try RegistryClient(reference: rawReference)
-        let repository = reference.path
-        let root = try await client.resolve(name: repository, tag: reference.tag ?? "latest")
+    /// Resolves only the tag's manifest digest. Update checks compare it with
+    /// the running digest; they never fetch or trust layers.
+    static func resolveDigest(reference source: String) async throws -> String {
+        let (client, repository, tag) = try registry(for: source)
+        return try await client.resolve(name: repository, tag: tag).digest
+    }
+
+    static func load(reference source: String, cacheRoot: URL) async throws -> OCIStackBundle {
+        let (client, repository, tag) = try registry(for: source)
+        let root = try await client.resolve(name: repository, tag: tag)
         let (composeData, lockData) = try await VerifiedComposeArtifact.load(root: root) {
             try await client.fetchData(name: repository, descriptor: $0)
         }
@@ -792,6 +801,12 @@ actor PrivateOCIStackRuntime: StackRuntime {
         return warnings
     }
 
+    // A registry lookup touches no pod state, so it never queues behind
+    // lifecycle work on this actor.
+    nonisolated func latestStackDigest() async throws -> String {
+        try await OCIComposeLoader.resolveDigest(reference: defaultOCIReference)
+    }
+
     func configuredModelCredentialKeys() async throws -> Set<String> {
         let output = try await runCredentialCommand(script: credentialStatusScript())
         return Set(try JSONDecoder().decode([String].self, from: output))
@@ -1162,6 +1177,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var modelCredentialsError: String?
     @Published private(set) var modelCredentialsNotice: String?
     @Published private(set) var modelCredentialsBusy = false
+    @Published private(set) var stackUpdate: StackUpdateStatus = .unchecked
+    @Published private(set) var stackUpdateChecking = false
+    /// Set only by automatic checks, so the main window can announce a newly
+    /// published stack once without repeating what Settings already shows.
+    @Published private(set) var stackUpdateAnnouncement: String?
+    @Published private(set) var automaticallyChecksForStackUpdates: Bool
+    private var stackUpdateTask: Task<Void, Never>?
+    private var stackUpdateMonitor: Task<Void, Never>?
+    private let defaults: UserDefaults
+    private let stackUpdateInterval: Duration
     private var storageTask: Task<Void, Never>?
     private var modelCredentialsTask: Task<Void, Never>?
     private var modelCredentialsNoticeTask: Task<Void, Never>?
@@ -1177,6 +1202,8 @@ final class AppModel: ObservableObject {
     init(
         runtime: any StackRuntime = PrivateOCIStackRuntime(),
         diagnostics: DiagnosticLog? = nil,
+        defaults: UserDefaults = .standard,
+        stackUpdateInterval: Duration = StackUpdatePreferences.interval,
         resources: @escaping @MainActor () throws -> (kernel: URL, data: URL) = {
             guard let kernel = Bundle.main.url(forResource: "vmlinux-arm64", withExtension: nil, subdirectory: "Runtime") else {
                 throw AppRuntimeError("The bundled Linux kernel is missing.")
@@ -1186,6 +1213,9 @@ final class AppModel: ObservableObject {
     ) {
         self.runtime = runtime
         self.diagnostics = diagnostics
+        self.defaults = defaults
+        self.stackUpdateInterval = stackUpdateInterval
+        self.automaticallyChecksForStackUpdates = StackUpdatePreferences.automaticChecks(in: defaults)
         self.resources = resources
         diagnostics?.append(source: "app", message: "Studio \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development") started")
     }
@@ -1201,6 +1231,7 @@ final class AppModel: ObservableObject {
         guard case .idle = phase, !isShuttingDown, !storageBusy, !modelCredentialsBusy, !RuntimeSmokeTest.requested else { return }
         phase = .resolving
         generation = UUID()
+        resetStackUpdate()
         let run = generation
         appendContainerLines(service: "runtime", lines: ["—— starting \(defaultOCIReference) ——"])
         services = Dictionary(uniqueKeysWithValues: serviceNames.map { ($0, .pending) })
@@ -1222,6 +1253,7 @@ final class AppModel: ObservableObject {
                 phase = .ready(info)
                 startupDownload = nil
                 diagnostics?.append(source: "app", message: "Workspace ready")
+                monitorStackUpdates()
             } catch is CancellationError {
                 if generation == run { phase = .idle; startupDownload = nil }
             } catch {
@@ -1239,6 +1271,7 @@ final class AppModel: ObservableObject {
         let previous = task
         previous?.cancel()
         generation = UUID()
+        resetStackUpdate()
         let run = generation
         phase = .stopping
         startupProgress = 0.02
@@ -1340,12 +1373,76 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setAutomaticStackUpdateChecks(_ value: Bool) {
+        automaticallyChecksForStackUpdates = value
+        defaults.set(value, forKey: StackUpdatePreferences.automaticChecksKey)
+        monitorStackUpdates()
+        // Settings shows this result itself, so it is not announced.
+        if value { checkForStackUpdate() }
+    }
+
+    func acknowledgeStackUpdateAnnouncement() {
+        stackUpdateAnnouncement = nil
+    }
+
+    func checkForStackUpdate(userInitiated: Bool = true) {
+        guard let running = info?.resolvedDigest, stackUpdateTask == nil, !isShuttingDown else { return }
+        let run = generation
+        stackUpdateChecking = true
+        stackUpdateTask = Task {
+            // A restart or shutdown resets this state and owns it from then on.
+            defer { if generation == run { stackUpdateTask = nil; stackUpdateChecking = false } }
+            do {
+                let latest = try await runtime.latestStackDigest()
+                guard generation == run, !Task.isCancelled else { return }
+                guard latest != running else { stackUpdate = .upToDate(.now); return }
+                let isNew = stackUpdate.availableDigest != latest
+                stackUpdate = .available(latest)
+                guard isNew else { return }
+                append("Stack update available: \(latest)")
+                if !userInitiated { stackUpdateAnnouncement = latest }
+            } catch is CancellationError {
+                return
+            } catch {
+                // Being offline is ordinary. Never replace a known update with
+                // a transient lookup failure.
+                guard generation == run, stackUpdate.availableDigest == nil else { return }
+                stackUpdate = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func monitorStackUpdates() {
+        stackUpdateMonitor?.cancel()
+        stackUpdateMonitor = nil
+        guard info != nil, automaticallyChecksForStackUpdates, !isShuttingDown else { return }
+        let run = generation
+        stackUpdateMonitor = Task { [weak self, stackUpdateInterval] in
+            // The digest was resolved at startup, so the first check waits a
+            // full interval. The continuous clock keeps counting through sleep.
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: stackUpdateInterval) } catch { return }
+                guard let self, self.generation == run else { return }
+                self.checkForStackUpdate(userInitiated: false)
+            }
+        }
+    }
+
+    private func resetStackUpdate() {
+        stackUpdateMonitor?.cancel(); stackUpdateMonitor = nil
+        stackUpdateTask?.cancel(); stackUpdateTask = nil
+        stackUpdateChecking = false
+        stackUpdate = .unchecked
+        stackUpdateAnnouncement = nil
+    }
+
     func shutdown() async -> Bool {
         if let shutdownTask { return await shutdownTask.value }
         diagnostics?.append(source: "app", message: "Shutdown started")
         isShuttingDown = true
         startupDownload = nil
         generation = UUID()
+        resetStackUpdate()
         phase = .stopping
         let previous = task
         previous?.cancel()
@@ -2096,6 +2193,15 @@ struct ContentView: View {
             // removes the embedded page, brings it back.
             if phase == .stopping, !model.isShuttingDown { pageReveal.stackIsRestarting() }
         }
+        .alert("A stack update is available", isPresented: Binding(
+            get: { model.stackUpdateAnnouncement != nil },
+            set: { if !$0 { model.acknowledgeStackUpdateAnnouncement() } }
+        )) {
+            Button("Restart Now") { model.restart() }
+            Button("Later", role: .cancel) {}
+        } message: {
+            Text("Restart the stack to download and run the new version. Your workspace is unavailable while it restarts; your data is kept. You can also restart later from the Stack menu.")
+        }
         .task { if !RuntimeSmokeTest.requested { model.start() } }
     }
 }
@@ -2441,7 +2547,8 @@ struct StackCommands: Commands {
             .disabled(model.info == nil)
         }
         CommandMenu("Stack") {
-            Button("Restart Stack") { model.restart() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(model.phase.busy)
+            Button(model.stackUpdate.availableDigest == nil ? "Restart Stack" : "Restart Stack to Update") { model.restart() }
+                .keyboardShortcut("r", modifiers: [.command, .shift]).disabled(model.phase.busy)
             Divider()
             Button("Show Live Logs") { openWindow(id: "live-logs") }
                 .keyboardShortcut("l", modifiers: [.command, .shift])

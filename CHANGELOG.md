@@ -9,6 +9,7 @@ All notable changes to Studio are documented here, following
 ### Added
 
 - Add the CBK community code of conduct from Platform.
+- Detect a newly published workspace stack while Studio is open and offer to restart into it. Automatic checks are on by default and can be turned off, or run on demand, in Settings → Update.
 
 ### Fixed
 

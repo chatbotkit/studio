@@ -28,7 +28,7 @@ struct StudioSettingsView: View {
                 }
                 .tag(StudioSettingsTab.storage)
 
-            UpdatesSettingsView()
+            UpdatesSettingsView(model: model)
                 .tabItem {
                     Label("Update", systemImage: "arrow.triangle.2.circlepath")
                 }

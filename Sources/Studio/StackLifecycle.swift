@@ -7,6 +7,8 @@ protocol StackRuntime: Sendable {
     func stop() async throws -> [String]
     func configuredModelCredentialKeys() async throws -> Set<String>
     func updateModelCredentials(_ changes: [ModelCredentialChange]) async throws -> Set<String>
+    /// The manifest digest the stack's OCI tag currently points at.
+    func latestStackDigest() async throws -> String
 }
 
 extension StackRuntime {
@@ -16,6 +18,10 @@ extension StackRuntime {
 
     func updateModelCredentials(_ changes: [ModelCredentialChange]) async throws -> Set<String> {
         throw AppRuntimeError("Model credentials are unavailable in this runtime.")
+    }
+
+    func latestStackDigest() async throws -> String {
+        throw AppRuntimeError("Stack update checks are unavailable in this runtime.")
     }
 }
 

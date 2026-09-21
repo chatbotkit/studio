@@ -121,6 +121,16 @@ private actor FakeStackRuntime: StackRuntime {
     private var startGate: CheckedContinuation<Void, Never>?
     private var stopGate: CheckedContinuation<Void, Never>?
     private var callbacks: [@MainActor @Sendable (RuntimeEvent) -> Void] = []
+    private var latestDigest: String?
+    private(set) var digestLookups = 0
+
+    func publish(digest: String?) { latestDigest = digest }
+
+    func latestStackDigest() async throws -> String {
+        digestLookups += 1
+        guard let latestDigest else { throw AppRuntimeError("fixture registry offline") }
+        return latestDigest
+    }
 
     func configure(holdStart: Bool = false, holdStop: Bool = false, failStop: Bool = false) {
         self.holdStart = holdStart; self.holdStop = holdStop; self.failStop = failStop
@@ -155,6 +165,19 @@ private actor FakeStackRuntime: StackRuntime {
 
 @MainActor private func fixture(_ runtime: FakeStackRuntime) -> AppModel {
     AppModel(runtime: runtime, resources: { (URL(filePath: "/unused-kernel"), URL(filePath: "/unused-data")) })
+}
+
+/// Stack update preferences must never read or write the developer's own.
+private func isolatedDefaults() throws -> UserDefaults {
+    let suite = "ai.cbk.studio.tests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defaults.removePersistentDomain(forName: suite)
+    return defaults
+}
+
+@MainActor private func updateFixture(_ runtime: FakeStackRuntime, defaults: UserDefaults, interval: Duration = .milliseconds(10)) -> AppModel {
+    AppModel(runtime: runtime, defaults: defaults, stackUpdateInterval: interval,
+             resources: { (URL(filePath: "/unused-kernel"), URL(filePath: "/unused-data")) })
 }
 
 @Test @MainActor func startupDownloadCannotLeakIntoReadyShutdownOrNextRun() async throws {
@@ -368,4 +391,83 @@ private actor FakeStackRuntime: StackRuntime {
     model.restart()
     try await eventually { model.info?.podID == "fixture-2" }
     #expect(await model.shutdown())
+}
+
+@Test @MainActor func automaticCheckAnnouncesANewStackDigestOnceAndRestartClearsIt() async throws {
+    let runtime = FakeStackRuntime()
+    await runtime.publish(digest: "fixture")
+    let defaults = try isolatedDefaults()
+    #expect(StackUpdatePreferences.automaticChecks(in: defaults))
+    let model = updateFixture(runtime, defaults: defaults)
+    model.start()
+    try await eventually { model.info != nil }
+    try await eventually { if case .upToDate = model.stackUpdate { true } else { false } }
+    #expect(model.stackUpdateAnnouncement == nil)
+
+    await runtime.publish(digest: "sha256:next")
+    try await eventually { model.stackUpdate == .available("sha256:next") }
+    #expect(model.stackUpdateAnnouncement == "sha256:next")
+
+    // Later checks of the same digest must not prompt again after "Later".
+    model.acknowledgeStackUpdateAnnouncement()
+    let lookups = await runtime.digestLookups
+    try await eventually { await runtime.digestLookups > lookups + 2 }
+    #expect(model.stackUpdateAnnouncement == nil)
+    #expect(model.stackUpdate == .available("sha256:next"))
+
+    // A lookup failure never hides an update that is already known.
+    await runtime.publish(digest: nil)
+    let offline = await runtime.digestLookups
+    try await eventually { await runtime.digestLookups > offline + 1 }
+    #expect(model.stackUpdate == .available("sha256:next"))
+
+    model.restart()
+    #expect(model.stackUpdate == .unchecked)
+    #expect(model.stackUpdateAnnouncement == nil)
+    try await eventually { model.info?.podID == "fixture-2" }
+    #expect(await model.shutdown())
+}
+
+@Test @MainActor func disabledStackUpdateChecksStayQuietButManualChecksStillWork() async throws {
+    let runtime = FakeStackRuntime()
+    await runtime.publish(digest: "sha256:next")
+    let defaults = try isolatedDefaults()
+    defaults.set(false, forKey: StackUpdatePreferences.automaticChecksKey)
+    let model = updateFixture(runtime, defaults: defaults)
+    #expect(!model.automaticallyChecksForStackUpdates)
+    model.checkForStackUpdate()
+    #expect(await runtime.digestLookups == 0, "Nothing is running to compare against")
+    model.start()
+    try await eventually { model.info != nil }
+    try await Task.sleep(for: .milliseconds(60))
+    #expect(await runtime.digestLookups == 0)
+    #expect(model.stackUpdate == .unchecked)
+
+    model.checkForStackUpdate()
+    #expect(model.stackUpdateChecking)
+    try await eventually { model.stackUpdate == .available("sha256:next") }
+    #expect(!model.stackUpdateChecking)
+    #expect(model.stackUpdateAnnouncement == nil, "Settings reports manual checks itself")
+
+    model.setAutomaticStackUpdateChecks(true)
+    #expect(defaults.bool(forKey: StackUpdatePreferences.automaticChecksKey))
+    let lookups = await runtime.digestLookups
+    try await eventually { await runtime.digestLookups > lookups + 1 }
+    model.setAutomaticStackUpdateChecks(false)
+    #expect(!StackUpdatePreferences.automaticChecks(in: defaults))
+    #expect(await model.shutdown())
+}
+
+@Test @MainActor func failedStackUpdateCheckIsReportedAndShutdownStopsChecking() async throws {
+    let runtime = FakeStackRuntime()
+    let model = updateFixture(runtime, defaults: try isolatedDefaults(), interval: .seconds(3_600))
+    model.start()
+    try await eventually { model.info != nil }
+    model.checkForStackUpdate()
+    try await eventually { model.stackUpdate == .failed("fixture registry offline") }
+    #expect(await model.shutdown())
+    #expect(model.stackUpdate == .unchecked)
+    let lookups = await runtime.digestLookups
+    model.checkForStackUpdate()
+    #expect(await runtime.digestLookups == lookups)
 }

@@ -72,6 +72,18 @@ struct CheckForUpdatesButton: View {
 struct UpdatesSettingsView: View {
     @ObservedObject private var updater = AppUpdater.shared
     @ObservedObject private var preparation = AppUpdater.shared.preparation
+    @ObservedObject var model: AppModel
+
+    private var stackStatus: String {
+        if model.stackUpdateChecking { return "Checking…" }
+        switch model.stackUpdate {
+        case .unchecked: return model.info == nil ? "Available once the workspace is running" : "Up to date at startup"
+        case let .upToDate(date): return "Up to date, checked \(date.formatted(date: .omitted, time: .shortened))"
+        case .available: return "A new version is available"
+        case let .failed(message): return "Couldn’t check: \(message)"
+        }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -91,6 +103,22 @@ struct UpdatesSettingsView: View {
                     set: { value in updater.setAutomaticDownloads(value) }
                 ))
                 .disabled(!updater.allowsAutomaticUpdates)
+            }
+            Section {
+                LabeledContent("Stack") { Text(stackStatus).foregroundStyle(.secondary) }
+                if model.stackUpdate.availableDigest != nil {
+                    Button("Restart Stack to Update") { model.restart() }
+                        .disabled(model.phase.busy)
+                } else {
+                    Button("Check for Stack Updates") { model.checkForStackUpdate() }
+                        .disabled(model.info == nil || model.stackUpdateChecking)
+                }
+                Toggle("Automatically check for stack updates", isOn: Binding(
+                    get: { model.automaticallyChecksForStackUpdates },
+                    set: { value in model.setAutomaticStackUpdateChecks(value) }
+                ))
+            } footer: {
+                Text("The workspace stack updates separately from the app. Studio always runs the newest stack when it starts; a restart applies an update found while it is open.")
             }
             if preparation.waiting {
                 Label("Preparing update…", systemImage: "clock")
