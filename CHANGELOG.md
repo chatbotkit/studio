@@ -13,6 +13,7 @@ All notable changes to Studio are documented here, following
 ### Fixed
 
 - Keep one decimal place in download sizes, including trailing zeros, to reduce layout shifts during startup.
+- Show the startup screen again while the stack restarts instead of leaving the window blank; it stays dismissed during quit and page reloads.
 
 ### Changed
 

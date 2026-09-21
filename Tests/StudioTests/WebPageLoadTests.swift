@@ -3,7 +3,7 @@ import WebKit
 import Testing
 @testable import Studio
 
-@Test func startupSurfaceIsRetiredForTheWindowLifetime() {
+@Test func startupSurfaceStaysRetiredUntilTheStackRestarts() {
     var reveal = WebPageRevealState()
     #expect(!reveal.hasRevealedPage)
 
@@ -13,9 +13,18 @@ import Testing
     reveal.documentStartedLoading()
     #expect(reveal.hasRevealedPage)
 
-    // Further documents (including a replacement runtime or retry) must
-    // never re-arm the initial launch cover.
+    // Further documents (navigation, reload or retry) must never re-arm
+    // the launch cover.
     reveal.documentStartedLoading()
+    reveal.documentBecameReady()
+    #expect(reveal.hasRevealedPage)
+
+    // An explicit stack restart covers the window again until the new
+    // stack's page is ready.
+    reveal.stackIsRestarting()
+    #expect(!reveal.hasRevealedPage)
+    reveal.documentStartedLoading()
+    #expect(!reveal.hasRevealedPage)
     reveal.documentBecameReady()
     #expect(reveal.hasRevealedPage)
 }

@@ -10,8 +10,15 @@ struct WebPageRevealState: Equatable {
     }
 
     mutating func documentStartedLoading() {
-        // The initial launch surface is a one-shot cover. Once the embedded
-        // page has appeared, navigation and reload keep WebKit visible.
+        // The launch surface covers a starting stack, not individual
+        // documents. Once the embedded page has appeared, navigation and
+        // reload keep WebKit visible.
+    }
+
+    mutating func stackIsRestarting() {
+        // An explicit restart tears down the embedded page, so the launch
+        // surface covers the window again until the new stack's page is ready.
+        hasRevealedPage = false
     }
 }
 

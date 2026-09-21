@@ -2088,9 +2088,13 @@ struct ContentView: View {
             pageBackgroundColor: pageBackgroundColor
         ))
         .onChange(of: model.info?.podID) { _, _ in
-            // Shutdown also clears the pod ID. Retire the launch cover for
-            // this window's lifetime, including quit and explicit restarts.
             pageError = nil
+        }
+        .onChange(of: model.phase) { _, phase in
+            // Shutdown also passes through .stopping, but the launch cover
+            // stays retired while quitting. Only an explicit restart, which
+            // removes the embedded page, brings it back.
+            if phase == .stopping, !model.isShuttingDown { pageReveal.stackIsRestarting() }
         }
         .task { if !RuntimeSmokeTest.requested { model.start() } }
     }
