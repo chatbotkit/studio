@@ -132,7 +132,7 @@ struct UpdatesSettingsView: View {
             }
 
             Section {
-                LabeledContent("Running Stack") { Text(runningStack).monospaced() }
+                LabeledContent("Running Stack") { Text(runningStack) }
                 if let digest = model.stackUpdate.availableDigest {
                     Text("Update available — \(StackUpdatePreferences.short(digest))").font(.caption).foregroundStyle(.orange)
                 } else if let stackStatus {
@@ -161,8 +161,7 @@ struct UpdatesSettingsView: View {
                     get: { model.automaticallyChecksForStackUpdates },
                     set: { value in model.setAutomaticStackUpdateChecks(value) }
                 ))
-            } footer: {
-                Text("The workspace stack updates separately from the app. Studio always runs the newest stack when it starts; a restart applies an update found while it is open.")
+                .help("The workspace stack updates separately from the app. Studio runs the newest stack whenever it starts; restarting applies an update found while it is open.")
             }
             if preparation.waiting {
                 Label("Preparing update…", systemImage: "clock")
