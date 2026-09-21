@@ -23,13 +23,14 @@ All notable changes to Studio are documented here, following
 ### Changed
 
 - Show the available app version in Settings → Update and turn Check for Updates into Install Update once one is found; show the running stack version alongside it.
+- Publish automatically when a new `VERSION` with dated notes reaches `main`: the Release workflow now tests, builds, records the tag, and publishes, replacing the manual tag script.
 - Add shared agent skills for releases, test-first changes, UI copy, helper visibility, and instruction-file links, and add concurrent-edit and commit rules to `AGENTS.md`.
 - Use CBK Platform naming in the README.
 - Add a Studio contribution guide and link it from the README header and documentation list to match Platform.
 - Update the README title and tagline to present Studio as a sovereign AI platform running locally on your desktop.
 - Remove the Docker setup tagline, repetitive server-side Platform promotion, and "Private by design" section from the README.
 - Move README installation instructions above the workspace feature list.
-- Skip automatic CI builds for changes limited to Markdown, documentation, license, and attribution files; explicit release tags still build normally.
+- Skip automatic CI builds for changes limited to Markdown, documentation, license, and attribution files; releases still build normally.
 - Simplify the README footer to match Platform, leaving license information in the repository's license files.
 
 ## [0.15.1] - 2026-09-10

@@ -1,14 +1,55 @@
 name: Release
+# VERSION owns the version. A push to main whose VERSION has no tag yet is a
+# release request: this workflow tests, builds, records the tag and publishes.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+# Serialize releases so a later push plans against the tags of an earlier one.
 concurrency:
-  group: studio-release
+  group: studio-release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
   cancel-in-progress: false
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Pull requests are validated too: a new VERSION must arrive with dated notes.
+      - id: plan
+        run: bash scripts/release-version.sh plan
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ steps.plan.outputs.release }}
+          RESUME: ${{ steps.plan.outputs.resume }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          publish=false
+          if [[ "$GITHUB_EVENT_NAME" != pull_request && "$GITHUB_REF" == refs/heads/main ]]; then
+            if [[ "$RELEASE" == true ]]; then
+              publish=true
+            elif [[ "$RESUME" == true ]]; then
+              # This commit is tagged. Finish it only if nothing was published.
+              draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
+              if [[ "$draft" != false ]]; then publish=true; fi
+            fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
   release:
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     permissions:
@@ -22,9 +63,9 @@ jobs:
           lfs: true
           fetch-depth: 0
           persist-credentials: false
-      - name: Validate tag and release branch
+      - name: Validate version and release branch
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
           set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
@@ -38,6 +79,7 @@ jobs:
       - name: Run regression tests
         run: |
           bash scripts/test-release-notes.sh
+          bash scripts/test-release-version.sh
           swift test -c release
       - name: Import signing credentials
         env:
@@ -82,14 +124,32 @@ jobs:
           echo "SPARKLE_PRIVATE_KEY_PATH=$RUNNER_TEMP/studio-update.key" >> "$GITHUB_ENV"
       - name: Build, sign, notarize, and package
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: scripts/package-release.sh "$RELEASE_TAG"
+      # Only a tested, signed and notarized build earns the tag. A tag pushed
+      # with this token starts no other workflow.
+      - name: Record the release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64)"
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          git fetch origin --tags
+          bash scripts/release-version.sh tag
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
           set -euo pipefail
+          # A draft left by an interrupted attempt is rebuilt from this run's assets.
+          if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)" == true ]]; then
+            gh release delete "$RELEASE_TAG" --yes
+          fi
           gh release create "$RELEASE_TAG" \
             "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip" \
             "dist/Studio-$STUDIO_VERSION-macOS-arm64.zip.sha256" \

@@ -12,7 +12,7 @@ task or an earlier approval is not permission. Stage changes only when asked.
 
 Keep `CHANGELOG.md` current as part of every user-visible change. Add a concise entry under the appropriate heading in **Unreleased** in the same change; do not wait for release preparation to reconstruct it later.
 
-Do not publish a release unless the user explicitly asks. When asked to mint or publish a version, follow the complete process in [`docs/releases.md`](docs/releases.md).
+Do not publish a release unless the user explicitly asks. Pushing a new `VERSION` to `main` publishes it. When asked to mint or publish a version, follow the complete process in [`docs/releases.md`](docs/releases.md).
 
 # Skills
 

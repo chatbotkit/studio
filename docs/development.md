@@ -68,8 +68,10 @@ Pushes to `main` and pull requests run tests, assemble the app, verify its signa
 Automatic CI skips changes limited to Markdown files, `docs/`, `LICENSE`, and
 `NOTICE`. Mixed documentation and code changes still run the full build, as do
 manual CI runs. Workflow changes also trigger CI, including the initial addition
-of these filters. Explicit version tags always run the release workflow and
-include the current license and documentation files where packaging uses them.
+of these filters. The Release workflow ignores these filters: every push to
+`main` plans a release from `VERSION`, and a new version always builds with the
+current license and documentation files where packaging uses them. See
+[releases](releases.md).
 If CI becomes a required pull-request check, account for documentation-only
 workflows being skipped in the branch protection rules.
 

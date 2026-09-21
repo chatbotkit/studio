@@ -16,8 +16,15 @@ not change existing GitHub releases or tags.
 `bash scripts/release-notes.sh X.Y.Z` previews the exact release description. It
 requires exactly one dated `## [X.Y.Z] - YYYY-MM-DD` section containing at least
 one bullet, and excludes Unreleased, other versions, and comparison-link footers.
-Local tagging, release packaging, and CI use the same validator/extractor.
+Release planning, packaging, and CI use the same validator/extractor.
 Run `bash scripts/test-release-notes.sh` when changing this process.
+
+`VERSION` owns the version; Git tags only record validated releases. On every
+push to `main`, `bash scripts/release-version.sh plan` compares `VERSION` with
+the existing `vX.Y.Z` tags. A `VERSION` that has no tag yet is a release request.
+It must be higher than every released version and have dated notes, or the run
+fails. Pull requests run the same validation without publishing. Run
+`bash scripts/test-release-version.sh` when changing this logic.
 
 ## Configure once
 
@@ -106,18 +113,14 @@ Only publish when explicitly requested. Prepare the release on `main`:
 4. Preview the description with `bash scripts/release-notes.sh X.Y.Z`, run
    `bash scripts/test-release-notes.sh` and the development checks above, and
    commit the version and changelog together.
-5. With a clean worktree, run:
+5. Push the commit to `main`. Pushing a new `VERSION` requests publication, so
+   push only when the release is wanted.
 
-```sh
-scripts/create-release-tag.sh
-```
-
-This requires a clean `main` and valid dated release notes, creates an annotated
-`vX.Y.Z` tag, and atomically pushes main and the tag. A pushed tag triggers the
-release workflow; normal main pushes do not publish a release. CI validates the
-version, main ancestry, and changelog before importing credentials. It runs
+Do not create or push tags manually. The Release workflow plans the version,
+validates main ancestry and the changelog before importing credentials, runs
 tests, builds with Developer ID and a secure timestamp, checks Apple's Accepted
-result, staples and validates the ticket, and checks Gatekeeper before publishing:
+result, staples and validates the ticket, and checks Gatekeeper. Only then does it
+record the annotated `vX.Y.Z` tag on that commit and publish:
 
 - `Studio-X.Y.Z-macOS-arm64.zip`
 - `Studio-X.Y.Z-macOS-arm64.zip.sha256`
@@ -129,6 +132,12 @@ a draft until the curated description and all three assets have uploaded, then
 becomes the latest release. Sparkle links to that same release for full notes.
 After publishing, verify the release is public, its assets and description are
 present, and the latest appcast is accessible.
+
+A failed run publishes nothing and leaves `VERSION` untagged, so the next push to
+`main`, a re-run, or a manual **Run workflow** on `main` tries again. If a run
+fails after recording the tag, the same commit resumes publication as long as no
+release has been published; a leftover draft is replaced. A release tag never
+moves to another commit: to ship a further fix, choose the next version.
 
 Local notarization is available via `scripts/package-release.sh vX.Y.Z` with `STUDIO_SIGNING_IDENTITY`, `APPLE_API_KEY_PATH`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER_ID` set. It refuses to overwrite an existing release archive. Notarization diagnostics stay in ignored `.release/` and never contain the private key.
 
